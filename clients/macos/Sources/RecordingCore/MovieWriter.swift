@@ -199,6 +199,6 @@ public enum RecordingMode: String, CaseIterable, Identifiable, Sendable {
     public var includesCamera: Bool { self != .desktop }
     public var includesDesktop: Bool { self != .camera }
     public var title: String {
-        switch self { case .camera: return "摄像头"; case .desktop: return "桌面"; case .both: return "双路" }
+        switch self { case .camera: return "摄像头"; case .desktop: return "桌面"; case .both: return "摄像头+桌面" }
     }
 }
