@@ -10,7 +10,8 @@
 | 04 | [客户端开发](04-client.md) | 开发 | macOS / Windows 客户端模块划分、关键 API、构建与签名 |
 | 05 | [服务端与控制端开发](05-server-and-control.md) | 开发 | Relay 服务、对象存储接入、控制端页面结构、部署 |
 | 06 | [稳定性、安全与隐私](06-stability-and-privacy.md) | 所有人 | 现场不翻车清单、隐私承诺及其技术保障 |
-| 07 | [路线图](07-roadmap.md) | 所有人 | P0–P3 阶段、每阶段验收 |
+| 07 | [路线图](07-roadmap.md) | 所有人 | M0–M5 里程碑、每步验收 |
+| 08 | [协作流程](08-dev-workflow.md) | 所有人 | Claude 统筹 / Codex 开发的分工、分支与 PR 规则、环境 |
 | — | [decisions/](decisions/) | 开发 | ADR：已拍板的决策及理由 |
 
 ## 术语
