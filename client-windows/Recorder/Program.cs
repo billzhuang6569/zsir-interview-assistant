@@ -12,7 +12,7 @@ internal record RecorderError(string code, string message, string? track = null,
 internal record Device(string id, string name);
 internal record Display(string id, string name, int width, int height);
 internal record Devices(Device[] cameras, Device[] mics, Display[] displays);
-internal sealed record Options(string Command, string Output, string[] Tracks, string? Camera, string? Mic, string? Display, double Duration, string Quality)
+internal sealed record Options(string Command, string Output, string[] Tracks, string? Camera, string? Mic, string? Display, double Duration, string Quality, bool StdinControl = false)
 {
     internal static Options Parse(string[] args)
     {
@@ -24,6 +24,7 @@ internal sealed record Options(string Command, string Output, string[] Tracks, s
         {
             string key = args[i];
             if (!seen.Add(key)) throw new ArgumentException("ARGUMENT_INVALID: 重复参数: " + key);
+            if (key == "--stdin-control" && args[0] == "capture") continue;
             if (key == "--json" && args[0] != "capture") continue;
             string[] allowed = args[0] == "devices" ? [] : args[0] == "preflight" ? ["--camera", "--mic", "--display"] : ["--out", "--tracks", "--camera", "--mic", "--display", "--duration", "--quality"];
             if (!allowed.Contains(key) || ++i >= args.Length || !values.TryAdd(key, args[i]))
@@ -36,7 +37,7 @@ internal sealed record Options(string Command, string Output, string[] Tracks, s
         double duration = double.PositiveInfinity;
         if (values.TryGetValue("--duration", out var text) && (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out duration) || !double.IsFinite(duration) || duration <= 0)) throw new ArgumentException("DURATION_INVALID: 时长须为有限正数。");
         if (args[0] == "capture" && !values.ContainsKey("--out")) throw new ArgumentException("OUTPUT_REQUIRED: capture 需要 --out <dir>。");
-        return new(args[0], values.GetValueOrDefault("--out", ""), tracks, values.GetValueOrDefault("--camera"), values.GetValueOrDefault("--mic"), values.GetValueOrDefault("--display"), duration, quality);
+        return new(args[0], values.GetValueOrDefault("--out", ""), tracks, values.GetValueOrDefault("--camera"), values.GetValueOrDefault("--mic"), values.GetValueOrDefault("--display"), duration, quality, seen.Contains("--stdin-control"));
     }
 }
 
@@ -55,10 +56,26 @@ internal sealed class Track : IAsyncDisposable
     }
 }
 
+internal sealed class DetachedWriter(TextWriter inner) : TextWriter
+{
+    public override System.Text.Encoding Encoding => inner.Encoding;
+    public override void WriteLine(string? value) { try { inner.WriteLine(value); } catch (IOException) { } }
+}
+
 internal static class Program
 {
     static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
-    internal static void Print(object value) => Console.WriteLine(JsonSerializer.Serialize(value, Json));
+    internal static void Print(object value)
+    {
+        // A detached GUI closes its pipe; status output must never stop capture.
+        try { Console.WriteLine(JsonSerializer.Serialize(value, Json)); } catch (IOException) { }
+    }
+    internal static async Task<bool> ReadControl(TextReader input, Action stop)
+    {
+        try { while (await input.ReadLineAsync() is { } line) if (line.Trim() == "stop") { stop(); return true; } }
+        catch (IOException) { } // Parent exit/EOF leaves capture running during the grace period.
+        return false;
+    }
     static async Task<Devices> GetDevices()
     {
         var cameras = (await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture)).Select(d => new Device(d.Id, d.Name)).ToArray();
@@ -153,6 +170,7 @@ internal static class Program
     static async Task<int> Main(string[] args)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
+        Console.SetError(new DetachedWriter(Console.Error));
         try
         {
             var options = Options.Parse(args);
@@ -205,6 +223,10 @@ internal static class Program
                 using var power = new Native.PowerRequest();
                 var cancelHandler = new ConsoleCancelEventHandler((_, e) => { e.Cancel = true; end = Math.Min(end, Stopwatch.GetElapsedTime(t0).TotalSeconds); });
                 Console.CancelKeyPress += cancelHandler;
+                if (options.StdinControl) _ = Task.Run(async () => {
+                    void Stop() => end = Math.Min(end, Stopwatch.GetElapsedTime(t0).TotalSeconds);
+                    if (!await ReadControl(Console.In, Stop)) { await Task.Delay(TimeSpan.FromSeconds(60)); Stop(); }
+                });
                 await WriteSession(output, tracks, options, t0, startedAt, "recording", 0);
                 try
                 {

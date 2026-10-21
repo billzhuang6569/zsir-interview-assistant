@@ -6,4 +6,5 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../Recorder/Recorder.csproj" /></ItemGroup>
+  <ItemGroup><Compile Include="../App/LocalState.cs" Link="LocalState.cs" /></ItemGroup>
 </Project>

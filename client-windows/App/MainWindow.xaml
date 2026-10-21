@@ -1,7 +1,10 @@
-<Window x:Class="ZsirRecorder.App.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="庄Sir线上采访助手" Width="480" Height="240">
-    <TextBlock Text="庄Sir线上采访助手 · Windows 占位"
-               HorizontalAlignment="Center" VerticalAlignment="Center" />
+<Window x:Class="ZsirRecorder.App.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="庄Sir线上采访助手" Width="280" Height="112" Topmost="True" ShowActivated="False">
+ <Border BorderBrush="#3a3d45" BorderThickness="1" Padding="8">
+  <StackPanel>
+   <DockPanel MouseLeftButtonDown="Drag"><Button DockPanel.Dock="Right" Content="⚙" Click="Settings" Padding="3,0" AutomationProperties.Name="设置"/><Button DockPanel.Dock="Right" Content="—" Click="HidePanel" Padding="3,0" AutomationProperties.Name="收起"/><Ellipse x:Name="RecordingLight" Width="7" Height="7" Fill="#e5484d" Margin="0,0,5,0" Visibility="Collapsed"/><TextBlock x:Name="Status" Text="● 就绪 · 本地使用" TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" FontWeight="Bold" VerticalAlignment="Center"/></DockPanel>
+   <TextBlock x:Name="Tracks" Text="请选择设备并完成自检" FontSize="11" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+   <Grid Margin="0,3"><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition/></Grid.ColumnDefinitions><ProgressBar x:Name="MicLevel" Height="4" Maximum="60" Foreground="#3ecf8e" AutomationProperties.Name="话筒音量"/><ProgressBar x:Name="SystemLevel" Grid.Column="1" Height="4" Maximum="60" Foreground="#5b9cf5" AutomationProperties.Name="系统声音音量"/></Grid>
+   <DockPanel><Button x:Name="Action" DockPanel.Dock="Right" Content="开始录制" Click="Toggle" Padding="8,3"/><Button x:Name="Folder" Content="输出目录" Click="OpenFolder" Padding="2" FontSize="10" Background="Transparent" BorderThickness="0"/></DockPanel>
+  </StackPanel>
+ </Border>
 </Window>

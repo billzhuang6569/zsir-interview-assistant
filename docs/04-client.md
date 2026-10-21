@@ -175,3 +175,15 @@ App 作为 recorder 直接父进程，执行 `devices` / `preflight` / `capture`
 浮窗提供就绪/3 秒倒计时/录制与保存中/警告或错误，非零退出为 `RECORDER_CRASHED`。停止二次确认，进程结束后显示可打开的保存目录。默认 `~/Movies/庄Sir采访/<YYYYMMDD-HHMMSS>/`，同名目录拒绝覆盖。持久化设备、画质、范围、输出目录、浮窗坐标；UI 无 Dock 图标，菜单栏提供状态与入口。
 
 自身窗口排除继续依赖 recorder 的父进程链；App 的浮窗、引导和设置窗口另设 `sharingType = .none`。第三方会议共享能否隐藏，以及 recorder 的防空闲睡眠断言在息屏/合盖中的实际效果，必须在对应系统/会议软件上验收，不能据此声明通过。当前实现、命令与测试边界见 [macOS README](../client-macos/README.md#m2-本地-appissue-14)。
+
+### 4.3 M2 Windows 本地 App（issue #15）
+
+`client-windows/App` 是独立 WPF 进程，深色引导与置顶浮窗，使用系统 NotifyIcon 托盘。普通构建自动将 Recorder 输出（包括 `ffmpeg/`）复制到 App 输出目录；自包含单文件发布使用 `client-windows/scripts/publish-app.ps1`，产物是 App.exe 与旁边的 zsir-recorder.exe、ffmpeg/，不制作安装包。
+
+引导 1–4 步在本机完成；5–6 步仅预留邀请码/欢迎位置。权限页用 MediaCapture 分别探测视频、音频访问并提供 Windows 设置深链。设备页显式启动预览，离页关闭捕获；预览代码通过编译链接复用 Recorder 捕获源，不在 UI 内执行正式录制。多屏需明确选择。自检调用原样 `preflight --json`，另检查用户输出目录可写与剩余空间。仅屏幕模式可在显示 CAM_NOT_FOUND 的同时通过屏幕自检；两路模式不能绕过摄像头失败。
+
+正式录制：浮窗 3 秒倒计时 → `capture --stdin-control` 子进程 → UTF-8 JSON lines 更新时长/轨道/电平；停止按钮二次确认，写入一行 `stop`，等待进程 finalize 后显示保存位置。非 0 退出显示红色 `RECORDER_CRASHED`，不会自动重录。Recorder 持有原有 PowerRequest，UI 不持有录制资源。stdout/stderr 断管不会终止录制；stdin EOF 后继续 60 秒再 finalize（遵循 §1.2），重开 App 显示旧录制状态并禁止重复开录，不重新附着旧 stdin。
+
+配置位于 `%LOCALAPPDATA%\ZsirInterview\settings.json`，原子替换；保存设备、范围、画质、目录、浮窗位置和旧 Recorder 的 PID/启动时间。默认输出 `%USERPROFILE%\Videos\庄Sir采访\YYYYMMDD-HHMMSS\`。浮窗和引导/设置窗口建立 HWND 后调用 WDA_EXCLUDEFROMCAPTURE；旧 Windows 或调用失败会提示，不能保证会议软件采用的捕获方式一定遵循此 API。
+
+当前自检画面使用设备页预览留帧，已在界面明确标注，**不是 M1 3 秒试录的解码截图**（M1 preflight 不导出帧且清理临时成片）。音量显示当前音频包峰值；300 ms 未收到新包显示静音，避免历史峰值卡住音量条。实际摄像头/麦克风、会议共享排除、合盖/息屏与多屏 DPI 仍需对应硬件验收。
