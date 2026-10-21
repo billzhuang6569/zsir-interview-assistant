@@ -24,7 +24,7 @@
 | Windows 排除控制窗 | [SetWindowDisplayAffinity](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowdisplayaffinity) | 自有顶层窗口可申请排除；EXCLUDEFROMCAPTURE 在 Windows 10 2004 引入 | 具体录屏与会议捕获路径是否生效，不能视为安全屏障 |
 | 托管会话长连接 | [Durable Objects WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/) | 可协调 WebSocket，休眠机制可减少空闲计算开销 | 目标地区可达性、超时/重连、真实价格与负载 |
 
-Apple 示例页提供 Markdown 入口；官方 API 能力不是“所有设备和会议软件稳定共用”的证明。本文没有据此承诺最低系统版本。对 Windows 也必须使用实际系统、驱动和会议版本建立支持清单。
+已读取 Apple 示例页的官方 Markdown；当前示例明确要求 macOS 15+ 和 Xcode 16+，这是该示例的运行要求，不应直接等同于整个产品或 ScreenCaptureKit 的最低版本。官方 API 能力不是“所有设备和会议软件稳定共用”的证明。本文没有据此承诺最低系统版本。对 Windows 也必须使用实际系统、驱动和会议版本建立支持清单。
 
 ## 3. 原生采集候选
 
