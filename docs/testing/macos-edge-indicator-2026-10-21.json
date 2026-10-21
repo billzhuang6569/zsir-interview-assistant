@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-21",
+  "platform": "macOS",
+  "feature": "recording duration and edge indicator",
+  "selfCheck": "passed",
+  "checks": [
+    "00:00:00, 00:00:59, 01:00:01, 100:00:00 formatting",
+    "only healthy recording may hide",
+    "15-second idle delay",
+    "window input resets idle delay",
+    "reveal grants fresh delay",
+    "failure and stop restore full window"
+  ],
+  "liveCheck": {
+    "startedBy": "user",
+    "mode": "desktop only",
+    "edgeIndicatorAX": "正在录制 00:00:37，展开录制窗口",
+    "afterIndicatorClickAX": "正在录制 · 正在写入本机 · 丢帧 0 · 录制时长 00:00:56",
+    "recordingInterruptedByAssistant": false
+  },
+  "limitations": [
+    "finalization not triggered on user ongoing recording",
+    "multi-monitor hotplug and reduced-motion visual appearance not manually tested",
+    "indicator screenshot unavailable while window sharing disabled"
+  ]
+}

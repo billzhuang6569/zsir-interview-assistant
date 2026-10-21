@@ -1,0 +1,32 @@
+{
+  "startedAt": "2026-10-21T13:52:14.5056028+00:00",
+  "finishedAt": "2026-10-21T13:52:48.4869169+00:00",
+  "state": "passed",
+  "previewLayoutPassed": true,
+  "audioMinusVideoSeconds": [
+    0.05000000000000071,
+    0.019999999999999574,
+    0.009999999999999787
+  ],
+  "fullDecodePassed": true,
+  "missingDeviceRejected": true,
+  "interruptedVideoReadable": true,
+  "encoderInterruptionHandled": true,
+  "audioFileChecksPassed": true,
+  "build": {
+    "warnings": 0,
+    "errors": 0
+  },
+  "visualChecks": [
+    "ready and collapsed native screenshots inspected",
+    "REC / Zsir icon embedded",
+    "custom title and dark controls",
+    "buttons remain inside window bounds"
+  ],
+  "notChecked": [
+    "all DPI settings",
+    "Windows 10 fallback appearance",
+    "1h+ recording",
+    "Final Cut Pro import"
+  ]
+}

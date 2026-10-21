@@ -1,0 +1,31 @@
+{
+  "sessionID": 1,
+  "productClient": false,
+  "audioTested": false,
+  "captureBackend": "gdigrab",
+  "encoder": "libx264",
+  "outputFolder": "Videos/ZSir Windows Checks/Take-4e060ad5-ae64-438e-845d-e76f9d668a24",
+  "media": {
+    "programs": [],
+    "stream_groups": [],
+    "streams": [
+      {
+        "codec_name": "h264",
+        "width": 2560,
+        "height": 1440,
+        "avg_frame_rate": "299/10"
+      }
+    ],
+    "format": {
+      "duration": "10.000000",
+      "size": "26447585"
+    }
+  },
+  "fullDecodePassed": true,
+  "state": "desktop_video_probe_passed",
+  "checkedAtUTC": "2026-10-21T13:17:40.8042586Z",
+  "tool": "FFmpeg 9.0.2 essentials (gyan.dev)",
+  "archiveSHA256": "60f467265b1e312373dbcd92200c2618a74850f98d3d078e94296bb3fa2047ba",
+  "hardwareEncodingAttempt": "Failed with FFmpeg 9.0.2: NVENC API 13.1 required, installed driver exposes 13.0. Driver unchanged.",
+  "visualCheck": "Frame at 5 seconds inspected: nonblank real desktop; preview kept outside repository."
+}

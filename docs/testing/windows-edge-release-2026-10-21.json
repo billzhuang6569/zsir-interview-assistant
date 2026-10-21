@@ -1,0 +1,33 @@
+{
+  "startedAt": "2026-10-21T14:24:01.5090977+00:00",
+  "finishedAt": "2026-10-21T14:25:03.3401289+00:00",
+  "state": "passed",
+  "previewLayoutPassed": true,
+  "dockedTimecode": "00:00:19",
+  "edgeDockAndRevealPassed": true,
+  "stopRestoresWindow": true,
+  "fullDecodePassed": true,
+  "audioMinusVideoSeconds": [
+    0.040000000000000036,
+    0.030000000000001137,
+    0.02000000000000135
+  ],
+  "missingDeviceRejected": true,
+  "interruptedVideoReadable": true,
+  "encoderInterruptionHandled": true,
+  "audioFileChecksPassed": true,
+  "platform": "Windows 11 x64",
+  "connection": "Tailscale SSH with interactive desktop scheduled task",
+  "package": "0.1.0-preview.1 self-contained win-x64",
+  "dependencyInstall": "Passed with official cached archive and pinned SHA-256; invalid archive rejected. Online download started but interrupted because of low throughput; full online download not accepted.",
+  "build": {
+    "warnings": 0,
+    "errors": 0
+  },
+  "notChecked": [
+    "1h+ recording",
+    "Final Cut Pro import",
+    "all DPI and multiple monitor arrangements",
+    "Windows camera (not implemented)"
+  ]
+}
