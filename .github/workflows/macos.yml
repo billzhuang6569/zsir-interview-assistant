@@ -1,0 +1,24 @@
+name: macos
+on:
+  push:
+    branches: [claude, 'cl/**']
+    paths:
+      - 'client-macos/**'
+      - '.github/workflows/macos.yml'
+  pull_request:
+    branches: [claude]
+    paths:
+      - 'client-macos/**'
+      - '.github/workflows/macos.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: client-macos
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift build -c release
