@@ -3,6 +3,9 @@ services:
     build:
       context: ..
       dockerfile: server/Dockerfile
+      args:
+        APT_MIRROR: ${APT_MIRROR:-}
+        NPM_REGISTRY: ${NPM_REGISTRY:-}
     ports:
       - "${PORT:-8080}:8080"
     environment:

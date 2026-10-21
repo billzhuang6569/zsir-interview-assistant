@@ -1,5 +1,10 @@
 FROM node:20-bookworm-slim AS build
+# 可选镜像源（国内服务器构建用）：APT_MIRROR=mirrors.aliyun.com NPM_REGISTRY=https://registry.npmmirror.com
+ARG APT_MIRROR=
+ARG NPM_REGISTRY=
 WORKDIR /app
+RUN if [ -n "$APT_MIRROR" ]; then sed -i "s/deb.debian.org/$APT_MIRROR/g" /etc/apt/sources.list.d/debian.sources; fi \
+ && if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY" && npm config set better_sqlite3_binary_host "https://registry.npmmirror.com/-/binary/better-sqlite3"; fi
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 COPY server/package*.json server/
 RUN cd server && npm ci
