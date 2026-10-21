@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>com.zsir.interview.recorder</string>
+<key>CFBundleName</key><string>庄Sir采访录制器</string>
+<key>NSCameraUsageDescription</key><string>将采访摄像头画面录制到本机。</string>
+<key>NSMicrophoneUsageDescription</key><string>将采访话筒声音录制到本机。</string>
+</dict></plist>

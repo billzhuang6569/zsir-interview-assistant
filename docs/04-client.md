@@ -93,6 +93,23 @@ recording ──stop──► stopping(finalize) ──► postprocess(宫格图
 - 公证：`xcrun notarytool submit --wait` + `stapler`（Secrets：`APPLE_ID`、`APPLE_TEAM_ID`、`APPLE_APP_PASSWORD`）。
 - 未签名的 CI 产物只用于内部测试（右键打开）。
 
+### 2.4 M1 命令行验证接口（issue #6）
+
+M1 按 issue 固定接口实现，无 UI / 网络；上文 `serve` IPC 和打包签名属于后续阶段。当前用 **SwiftPM + Command Line Tools** 构建，不依赖 Xcode.app。执行目录为 `client-macos`：
+
+```sh
+HTTPS_PROXY=http://127.0.0.1:7897 swift build -c release
+.build/release/recorder devices --json
+.build/release/recorder preflight --json [--camera id] [--mic id] [--display id]
+.build/release/recorder capture --out <dir> [--tracks cam,screen] [--camera id] [--mic id] [--display id] [--duration <s>] [--quality saver|recommended|high]
+```
+
+M1 输出采用 issue 指定的 **fragmented MP4**（`.mp4` + `movieFragmentInterval=2s`），覆盖上文早期 MOV 方案。硬件 H.264 必需；不自动回退软编。macOS 不支持 `.inputPriority` preset，直接设置摄像头 activeFormat 与 30fps 帧间隔。先预热捕获，再取两路共同 host-clock T0，duration 从 T0 起算。
+
+stdout 为 JSON lines：devices 输出设备列表；preflight 3 秒临时试录后输出 `{cam,screen,systemAudio,encoder,diskFreeBytes,errors}`；capture 每秒输出 `{t,tracks,levels}`。正常停止（时长到或 SIGINT/SIGTERM）finalize 后 exit 0，错误 exit 1。权限缺失返回 `PERMISSION_SCREEN` / `PERMISSION_CAMERA` / `PERMISSION_MIC`。`session.json` 记录首帧 PTS、`firstFrameOffsetMs`、尺寸、目标/实际帧率、设备名和版本，录制中每秒更新。
+
+ScreenCaptureKit 排除 recorder 与父进程链中宿主应用的所有窗口（终端本身并不属于 recorder PID）；`--tracks screen` 不打开相机或话筒。详细行为、限制与真机验收命令见 [client-macos/README.md](../client-macos/README.md)。
+
 ## 3. Windows 实现
 
 ### 3.1 工程
