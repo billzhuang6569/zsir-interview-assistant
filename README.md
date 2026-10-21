@@ -33,14 +33,55 @@
 docs/                 产品与开发文档（从 docs/README.md 开始读）
 design/               UI 设计稿（HTML 高保真线框，浏览器直接打开）
 protocol/             客户端 ↔ 服务器 ↔ 控制端 的消息定义（JSON Schema）
-server/               Relay 服务（Node.js + TypeScript）            [P1]
-control/              控制端网页（React + Vite）                    [P1]
-client-macos/         macOS 客户端（Swift / SwiftUI）               [P0]
-client-windows/       Windows 客户端（C# / .NET 8 / WPF）           [P0]
-.github/workflows/    CI：三端构建、打包                            [P1]
+server/               Relay 服务（Node.js + TypeScript）
+control/              控制端网页（React + Vite）
+client-macos/         macOS 客户端（Swift / SwiftUI）
+client-windows/       Windows 客户端（C# / .NET 8 / WPF）
+.github/workflows/    CI：三端构建、打包
 ```
 
-带 `[Px]` 的目录随对应阶段创建，见 [docs/07-roadmap.md](docs/07-roadmap.md)。
+当前为 M0 骨架，仅含版本输出、WPF/网页占位与健康检查。
+
+## 如何构建
+
+macOS 13+，安装 Command Line Tools（Swift 5.9+），无需 Xcode.app：
+
+```sh
+cd client-macos
+swift build -c release
+.build/release/Recorder
+.build/release/App
+```
+
+Windows，安装 .NET 8 SDK（包含 WPF 构建支持）：
+
+```powershell
+cd client-windows
+dotnet build -c Release
+```
+
+服务端与控制端使用 Node.js 20，各自在仓库根目录开始执行：
+
+```sh
+cd server
+npm install
+npm run build
+npm test
+npm start
+# 另一个终端：curl http://127.0.0.1:3000/healthz → {"ok":true}
+```
+
+```sh
+cd control
+npm install
+npm run build
+npm test --if-present
+npm run dev
+```
+
+控制端目前为静态占位页，尚无独立测试；构建包含 TypeScript 检查。
+需要本机代理时，仅在联网命令前加 `HTTPS_PROXY=http://127.0.0.1:7897`。
+CI 执行 `npm install`，三条工作流按各模块及自身工作流路径过滤，PR 目标为 `claude`。
 
 ## 文档入口
 

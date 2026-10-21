@@ -1,0 +1,27 @@
+name: windows
+on:
+  push:
+    branches: [claude, 'cl/**']
+    paths:
+      - 'client-windows/**'
+      - '.github/workflows/windows.yml'
+  pull_request:
+    branches: [claude]
+    paths:
+      - 'client-windows/**'
+      - '.github/workflows/windows.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-2022
+    defaults:
+      run:
+        working-directory: client-windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - run: dotnet build -c Release

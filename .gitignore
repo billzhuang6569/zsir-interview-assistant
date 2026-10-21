@@ -17,3 +17,6 @@ recovery/
 *.mov
 *.mkv
 *.wav
+.build/
+bin/
+obj/
