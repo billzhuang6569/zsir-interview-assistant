@@ -138,3 +138,11 @@ recording ──stop──► stopping(finalize) ──► postprocess(宫格图
 | 显示器 | 单屏、双屏不同缩放、4K HiDPI |
 | 会议软件 | Zoom、腾讯会议、飞书、Teams —— 同时开摄像头 + 共享屏幕 |
 | 破坏测试 | 杀 UI 进程、杀 Recorder、拔网线、合盖、拔摄像头、磁盘写满、断电 |
+
+### 4.1 M1 Windows CLI 落地约定
+
+实现与构建/真机脚本见 [client-windows/README.md](../client-windows/README.md)。`devices --json`、`preflight --json [--camera id --mic id --display id]`、`capture --out <dir> [--tracks cam,screen --duration seconds --quality saver|recommended|high]` 与 M1 mac 共用接口；stdout 是 UTF-8 JSON lines，错误为 `errors:["CODE: 说明"]` 字符串数组。
+
+`session.json` 公共字段为 `version/state/startedAt/clock/hostTimeT0/devices/quality/encoder/t/tracks/levels/error`，每路含 `ok/width/height/fps/targetFPS/bytes/levelDb/audioSamples/droppedSamples/firstPTS/firstFrameOffsetMs`。Windows 的 `hostTimeT0` / `firstPTS` 使用 QPC 秒；捕获源预热后从共同 T0 输出 CFR，首帧输出偏移为 0；音频按 QPC 放入 PCM 时间缓冲，静音补零。ffmpeg 以固定帧率和样本数产生 PTS，**不以管道到达墙钟做时间戳**。正常结束标记 `finished`，错误标记 `failed`，强杀保留最后一个原子写入的 `recording` 快照。
+
+Windows CLI 必须运行在交互桌面，OpenSSH Session 0 直接捕获会报 `INTERACTIVE_SESSION_REQUIRED`；远程验收用 `/IT` 计划任务。窗口排除测试只检查隐藏窗口上的 API 返回值，视觉效果需后续独立验收。LGPL 编码兜底明确使用 `h264_mf -hw_encoding 0` 并报告 `ENCODER_FALLBACK`；不使用 x264。M1 不包含设备热插拔恢复、DirectShow 回退或显示器尺寸变化后的自动重建。

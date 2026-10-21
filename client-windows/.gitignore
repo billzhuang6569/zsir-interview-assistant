@@ -1,0 +1,3 @@
+Recorder/ffmpeg/
+*.zip
+.test-output/
