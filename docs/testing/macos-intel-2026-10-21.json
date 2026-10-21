@@ -1,0 +1,15 @@
+{
+  "architecture": "x86_64",
+  "minimumOS": "macOS 14",
+  "build": "release cross-compiled on Apple Silicon",
+  "bundleSignature": "ad-hoc, codesign --verify --deep --strict passed",
+  "uiChecks": "passed under Rosetta",
+  "captureChecks": "passed under Rosetta: synthetic dual tracks, full 4K decode, clock mapping, preview frames, active lock and SIGKILL recovery",
+  "notChecked": [
+    "physical Intel Mac",
+    "real Intel camera and screen capture",
+    "1h+ recording",
+    "Final Cut Pro import",
+    "Developer ID signing and notarization"
+  ]
+}

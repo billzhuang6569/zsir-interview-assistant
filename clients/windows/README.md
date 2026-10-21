@@ -44,3 +44,12 @@ FFmpeg 不提交到仓库、不在应用启动时下载。本项目自有代码�
 ## 录制计时与屏幕边缘提示
 
 录制中显示累计时:分:秒；15 秒未操作小窗后自动收起到右侧边缘红圈。点击红圈展开，不影响录制；停止或检测到异常时恢复主窗口。红圈与主窗口均排除出录制，系统关闭动画时红圈保持静止。自检覆盖自动收起、计时增长、展开继续录制、停止及编码器中断后的窗口恢复。
+
+## 按架构打包
+
+```powershell
+.\script\package-windows.ps1 -Architecture x64
+.\script\package-windows.ps1 -Architecture arm64
+```
+
+从仓库根目录运行，输出到 `dist/release/`，目标目录已存在时拒绝覆盖。包自带对应架构的 .NET 运行时及许可。ARM64 包要求 Windows 11 ARM64，应用为原生 ARM64；当前固定版本 FFmpeg/ffprobe 为 x64，依赖系统仿真，尚非全链路原生 ARM 编码。

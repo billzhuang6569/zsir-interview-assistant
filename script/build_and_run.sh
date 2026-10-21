@@ -7,13 +7,16 @@ APP_NAME="ZSirCapture"
 PACKAGE_DIR="$ROOT_DIR/clients/macos"
 APP_BUNDLE="${APP_BUNDLE:-$ROOT_DIR/dist/$APP_NAME.app}"
 CONFIGURATION="${CONFIGURATION:-debug}"
+BUILD_ARCH="${BUILD_ARCH:-$(uname -m)}"
+case "$BUILD_ARCH" in arm64|x86_64) ;; *) echo "Unsupported macOS architecture: $BUILD_ARCH" >&2; exit 2 ;; esac
+TRIPLE="$BUILD_ARCH-apple-macosx14.0"
 # Never kill a recorder: a rebuild must not interrupt an active Take.
 if [[ "$APP_BUNDLE" == "$ROOT_DIR/dist/$APP_NAME.app" ]] && pgrep -x "$APP_NAME" >/dev/null; then
   echo "请先在应用内停止并保存，再按 ⌘Q 退出后重新构建。" >&2
   exit 1
 fi
-swift build --package-path "$PACKAGE_DIR" -c "$CONFIGURATION"
-BUILD_DIR="$(swift build --package-path "$PACKAGE_DIR" -c "$CONFIGURATION" --show-bin-path)"
+swift build --package-path "$PACKAGE_DIR" -c "$CONFIGURATION" --triple "$TRIPLE"
+BUILD_DIR="$(swift build --package-path "$PACKAGE_DIR" -c "$CONFIGURATION" --triple "$TRIPLE" --show-bin-path)"
 mkdir -p "$APP_BUNDLE/Contents/MacOS" "$APP_BUNDLE/Contents/Resources"
 cp "$PACKAGE_DIR/Assets/AppIcon.icns" "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 cp "$BUILD_DIR/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"

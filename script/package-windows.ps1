@@ -1,15 +1,16 @@
-param([string]$OutputRoot)
+param([string]$OutputRoot, [ValidateSet("x64", "arm64")][string]$Architecture="x64")
 $ErrorActionPreference='Stop'
 $root=Split-Path $PSScriptRoot -Parent
+$rid='win-'+$Architecture
 if(!$OutputRoot){$OutputRoot=Join-Path $root 'dist\release'}
-$stage=Join-Path $OutputRoot 'ZSirCapture-0.1.0-preview.1-windows-x64'
+$stage=Join-Path $OutputRoot ('ZSirCapture-0.1.0-preview.1-windows-'+$Architecture)
 if(Test-Path $stage){throw "Package directory already exists: $stage"}
-dotnet publish (Join-Path $root 'clients\windows\ZSirCapture.Windows.csproj') -c Release -r win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false -o $stage --nologo
+dotnet publish (Join-Path $root 'clients\windows\ZSirCapture.Windows.csproj') -c Release -r $rid -p:PlatformTarget=$Architecture --self-contained true -p:DebugType=None -p:DebugSymbols=false -o $stage --nologo
 if($LASTEXITCODE -ne 0){throw 'Publish failed'}
 Copy-Item (Join-Path $root 'clients\windows\Install-RecordingTools.cmd') $stage
 $frameworks=(Get-Content (Join-Path $stage 'ZSirCapture.Windows.runtimeconfig.json') -Raw|ConvertFrom-Json).runtimeOptions.includedFrameworks
 foreach($framework in $frameworks){
-    $pack=Join-Path $env:USERPROFILE ('.nuget\packages\'+$framework.name.ToLower()+'.runtime.win-x64\'+$framework.version)
+    $pack=Join-Path $env:USERPROFILE ('.nuget\packages\'+$framework.name.ToLower()+'.runtime.'+$rid+'\'+$framework.version)
     $notice=Join-Path $stage ('licenses\'+$framework.name)
     New-Item -ItemType Directory -Path $notice -Force|Out-Null
     $files=@(Get-ChildItem $pack -File|Where-Object {$_.Name -match '^(LICENSE|THIRD-PARTY|THIRD.PARTY)'})

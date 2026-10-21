@@ -1,0 +1,19 @@
+{
+  "architecture": "ARM64",
+  "build": "Cross-published on Windows x64 with .NET SDK 8.0.426, win-arm64 RuntimeIdentifier and ARM64 PlatformTarget",
+  "state": "build_and_package_checks_passed_runtime_unverified",
+  "verified": [
+    "ARM64 PE headers for application EXE/DLL, hostfxr, CoreCLR and JIT",
+    "self-contained runtime and license notices included",
+    "FFmpeg binaries excluded from release zip",
+    "published asset SHA-256 matches local package"
+  ],
+  "ffmpeg": "Pinned x64 Gyan build; requires Windows 11 ARM64 x64 emulation",
+  "virtualMachineAttempt": "Connected through Tailscale to an ARM64 Windows 11 Parallels guest; no SDK installed. Subsequent SSH sessions stalled or timed out before installation and recording validation. No claim of native guest build or successful recording.",
+  "notChecked": [
+    "ARM64 application launch and recording",
+    "1h+ recording",
+    "Final Cut Pro import",
+    "all virtual or physical audio devices"
+  ]
+}

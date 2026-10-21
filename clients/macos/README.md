@@ -80,3 +80,12 @@ swift run --package-path clients/macos CaptureChecks
 点击红圈或点击 Dock 中的应用可展开，并重新计算 15 秒。停止、保存、等待录制数据、错误或模态提示时恢复完整窗口。系统录屏过滤器继续按本进程排除所有应用窗口（包括红圈）。收起只影响窗口显示，不停止采集。
 
 运行 `swift run --package-path clients/macos ZSirCapture --check-recording-ui` 检查跨小时计时、正常录制前不隐藏、15 秒等待、操作重置、重新展开等待期，以及错误和停止时恢复窗口。该检查模拟录制状态，不打开采集设备。此环境仅有 Command Line Tools，缺少 XCTest，沿用可执行自检模式。
+
+## 按架构打包
+
+```bash
+BUILD_ARCH=arm64 ./script/package-macos.sh
+BUILD_ARCH=x86_64 ./script/package-macos.sh
+```
+
+从仓库根目录运行，输出到 `dist/release/`，目标目录已存在时拒绝覆盖。Intel 包可在 Apple Silicon 上交叉编译；Rosetta 自检不能替代 Intel 物理机器的设备采集验收。发布包使用临时本机签名，尚未公证。
