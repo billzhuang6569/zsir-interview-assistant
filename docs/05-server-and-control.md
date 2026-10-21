@@ -25,15 +25,15 @@ server/
     storage/s3.ts       对象存储封装
   test/                 vitest：hub 转发语义、离线补发、上传流程（用 MinIO 容器）
   Dockerfile
-  docker-compose.yml    relay + caddy（自动 HTTPS）
+  docker-compose.yml    relay（当前无域名，HTTP；有域名后另配反代）
 ```
 
 ### 1.3 数据模型（SQLite）
 
 ```sql
 rooms   (id TEXT PK, name, code TEXT UNIQUE, director, welcome, guests_json, default_tracks, created_at, expires_at, archived_at NULL)
-clients    (id TEXT PK, session_id, name, os_json, app_version, first_seen, last_seen)
-recordings (id TEXT PK, session_id, client_id, started_at, stopped_at, tracks_json)
+clients    (id TEXT PK, session_id, name, os_json, app_version, first_seen, last_seen, pending_command NULL)
+recordings (id TEXT PK, session_id, client_id, started_at, stopped_at, tracks_json, files_json NULL)
 files      (id PK, recording_id, track, bytes, duration_ms, sha256, object_key, upload_state, uploaded_at)
 events     (id PK, session_id, client_id NULL, ts, actor, level, code, text, detail_json)
 ```
@@ -61,7 +61,7 @@ events     (id PK, session_id, client_id NULL, ts, actor, level, code, text, det
 
 ### 1.6 部署
 
-- 单台 VPS，`docker compose up -d`：`relay` + `caddy`（反代 + 自动证书）。
+- 当前无域名部署：仓库根目录 `docker compose -f server/docker-compose.yml up --build -d`，或进入 `server/` 执行 `docker compose up --build -d`。访问 `http://<服务器IP>:8080`；不依赖 Caddy 或域名。
 - 资源：1 vCPU / 1 GB 足够 10 个并发房间。
 - 备份：每日 `sqlite3 .backup` 到对象存储。
 - 对象存储生命周期：成品 30 天后转低频/归档（可配置），宫格图 7 天删除。
@@ -105,7 +105,7 @@ src/
 
 ### 2.4 构建
 
-`vite build` 输出到 `server/public/`，由 Relay 托管；CI 在 `ubuntu` 上构建并与 server 一起打 Docker 镜像。
+`vite build` 输出到 `control/dist/`，由 Relay 托管；CI 在 `ubuntu` 上构建并与 server 一起打 Docker 镜像。
 
 ## 3. 下载页（`/download`，固定地址）
 
@@ -115,3 +115,16 @@ Relay 直接渲染的极简静态页，**不带任何房间参数**，所有嘉�
 - 三步图示：安装 → 允许权限并检查画面 → 输入导演给的邀请码。
 - 不做「链接自动带码」（URL scheme / 安装包改名那套）：多一条链路就多一个现场翻车点，6 位数字嘉宾手输 5 秒钟的事。
 - 隐私承诺三条（见 06 文档 §2）。
+
+
+## 4. Issue #8 当前实现与本地联调
+
+- `src/app.ts` 组装 HTTP、静态托管和 WS；`src/ws/hub.ts` 管理转发/超时/重连；`src/ws/messages.ts` 使用 `protocol/schema` 校验信封、state、event、commands；`src/store/db.ts` 管理 SQLite。
+- 当前只建 rooms / clients / recordings / events 四表，files 表及对象存储留后续。`pending_command` 保存离线 stop，`files_json` 保存客户端 finalize 文件元数据，未上传任何素材。
+- `PORT` 默认 8080，`DB_PATH` 默认 `./data/relay.sqlite`（相对启动目录）。Docker 固定容器内 8080，宿主机可通过 `PORT` 改映射端口。命名卷 `relay-data` 挂载 `/app/data`，运行用户为 node；不要用 `down -v`，它会删除房间数据。
+- 单进程 Relay；客户端沿用 UUID 换房时清除旧房间待发指令，旧录制和日志仍保留在原房间。控制端使用 React 本地状态与一条房间 WS，无额外状态管理依赖。
+- 先在 `control/` 执行 `HTTPS_PROXY=http://127.0.0.1:7897 npm ci` 和 `HTTPS_PROXY=http://127.0.0.1:7897 npm run build`。
+- 在 `server/` 执行同样的 install/build 命令，再执行 `HTTPS_PROXY=http://127.0.0.1:7897 npm start`；浏览器打开 `http://localhost:8080`，填写昵称、新建房间。
+- 在 `server/` 执行 `HTTPS_PROXY=http://127.0.0.1:7897 npm run mock -- <6位码> [ws://服务器IP:8080] [客户端UUID]`。mock 每 2 秒 state，3 秒倒计时，模拟录制元数据，不创建真实视频；掉线自动重连，保持本地模拟录制状态。
+- `HTTPS_PROXY=http://127.0.0.1:7897 npm test` 构建服务端并执行 HTTP/真实 ws 集成测试。Docker 构建上下文为仓库根目录，仅 COPY server/control/protocol 必需文件，不拷贝客户端或本地数据库。
+- 本阶段邀请文案保留固定 `/download` 地址，但下载页和安装包分发未交付。静帧为明确标注的占位，不能用于真实拍摄画面检查。
