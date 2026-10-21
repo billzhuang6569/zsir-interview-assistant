@@ -6,8 +6,8 @@
 
 | 端 | URL | 鉴权 |
 |---|---|---|
-| 客户端 | `wss://<host>/ws/client?session=<6位码>&client=<uuid>` | 会话码有效即允许；`client` 由客户端首次生成并持久化，重连沿用 |
-| 控制端 | `wss://<host>/ws/control?session=<会话 id>` | 当前版本无鉴权（内部使用） |
+| 客户端 | `wss://<host>/ws/client?code=<6位邀请码>&client=<uuid>` | 邀请码有效即允许，服务器据此把连接挂到对应房间；`client` 由客户端首次生成并持久化，重连沿用。邀请码错误/过期时以 HTTP 403 拒绝握手，body `{error:"INVALID_CODE"}` |
+| 控制端 | `wss://<host>/ws/control?room=<房间 id>` | 当前版本无鉴权（内部使用） |
 
 服务器每 10 秒发 ping，20 秒无 pong 断开。客户端每 2 秒主动发 `state`；30 秒无 `state` 服务器将其标记为 `offline` 并广播。
 
@@ -54,7 +54,7 @@
 
 ## 4. 控制端 → 服务器 → 客户端
 
-服务器校验会话后原样转发给目标客户端，并把「谁点了什么」写入事件日志广播给所有控制端。
+服务器校验房间后原样转发给目标客户端，并把「谁点了什么」写入事件日志广播给所有控制端。
 
 | type | payload | 客户端行为 |
 |---|---|---|
@@ -72,7 +72,7 @@
 
 | type | payload |
 |---|---|
-| `session` | 完整会话快照：`{session:{id,name,code,createdAt}, clients:[{clientId,name,os,appVersion,online,lastState,lastFrames:{cam:{url,ts},screen:{url,ts}}}], recordings:[…], log:[…最近 200 条]}`，连接时与会话变化时发 |
+| `room` | 完整房间快照：`{room:{id,name,code,director,welcome,guests[],createdAt,expiresAt}, clients:[{clientId,name,os,appVersion,online,lastState,lastFrames:{cam:{url,ts},screen:{url,ts}}}], recordings:[…], log:[…最近 200 条]}`，连接时与房间变化时发 |
 | `client_state` | `{clientId, state}`（转发） |
 | `client_online` / `client_offline` | `{clientId}` |
 | `frame` | `{clientId, track, url, ts}` 静帧更新 |
@@ -84,15 +84,17 @@
 
 | 方法 | 路径 | 用途 |
 |---|---|---|
-| `POST` | `/api/sessions` | 控制端新建会话 `{name}` → `{id, code, downloadUrl}` |
-| `GET` | `/api/sessions` | 列表 |
-| `POST` | `/api/frames?session=&client=&track=` | 客户端上传 JPEG（≤ 300 KB，长边 ≤ 960px）；服务器只保留每轨最新一张于内存，响应 `{url}` |
-| `GET` | `/frames/<session>/<client>/<track>.jpg?ts=` | 控制端取静帧 |
-| `POST` | `/api/contact-sheets?session=&client=&recording=&track=` | 上传宫格图 JPEG（≤ 4 MB）；服务器落盘保存 7 天 |
-| `POST` | `/api/upload/init` | `{session, client, recording, track, bytes, partSize}` → `{uploadId, key, parts:[{n,url}]}` |
+| `POST` | `/api/rooms` | 控制端新建房间 `{name, director, guests?:[string], welcome?, defaultTracks?}` → `{id, code, expiresAt}` |
+| `GET` | `/api/rooms` | 列表 |
+| `POST` | `/api/rooms/<id>/archive` | 归档，邀请码立即失效 |
+| `GET` | `/api/join?code=` | 客户端校验邀请码（引导第 5 步，建立 WS 前调用）→ `200 {room:{id,name,director,welcome,guests[],defaultTracks}}` 或 `403 {error:"INVALID_CODE"}`；同 IP 失败 5 次锁 10 分钟 |
+| `POST` | `/api/frames?room=&client=&track=` | 客户端上传 JPEG（≤ 300 KB，长边 ≤ 960px）；服务器只保留每轨最新一张于内存，响应 `{url}` |
+| `GET` | `/frames/<room>/<client>/<track>.jpg?ts=` | 控制端取静帧 |
+| `POST` | `/api/contact-sheets?room=&client=&recording=&track=` | 上传宫格图 JPEG（≤ 4 MB）；服务器落盘保存 7 天 |
+| `POST` | `/api/upload/init` | `{room, client, recording, track, bytes, partSize}` → `{uploadId, key, parts:[{n,url}]}` |
 | `POST` | `/api/upload/complete` | `{uploadId, key, parts:[{n,etag}], sha256}` → `{ok, downloadUrl}` |
 | `GET` | `/api/recordings/<id>/download?track=` | 控制端重新获取预签名下载链接 |
-| `GET` | `/download/<code>` | 嘉宾下载页：按 UA 给 dmg/exe，链接内含会话码 |
+| `GET` | `/download` | 嘉宾下载页（**固定地址，与房间无关**）：按 UA 给 dmg/exe |
 
 ## 7. 离线与重连语义
 
@@ -100,8 +102,8 @@
 |---|---|
 | 客户端断线重连 | 重发 `hello` + 完整 `state`；服务器把离线期间**最后一条** `stop` 或 `finish_task` 补发（其它指令丢弃） |
 | 客户端离线时控制端点「开始」 | 服务器直接返回 `ack{ok:false, error:"CLIENT_OFFLINE"}`，不排队 |
-| 控制端断线 | 重连后收到完整 `session` 快照 |
-| 服务器重启 | 会话、客户端注册、日志在 SQLite；最新静帧丢失（客户端下一个 5 秒周期即恢复） |
+| 控制端断线 | 重连后收到完整 `room` 快照 |
+| 服务器重启 | 房间、客户端注册、日志在 SQLite；最新静帧丢失（客户端下一个 5 秒周期即恢复） |
 | 录制中网络完全不可用 | 录制继续；停止后上传器持续重试；宫格图与成品在网络恢复后补传 |
 
 ## 8. 事件码

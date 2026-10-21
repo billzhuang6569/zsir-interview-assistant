@@ -7,7 +7,7 @@
 ```
 App（UI 进程）
 ├─ FloatingPanel        角落浮窗（状态、按钮）
-├─ Onboarding           欢迎 / 权限 / 会话码 / 设备 / 自检
+├─ Onboarding           欢迎 / 权限 / 设备 / 自检 / 邀请码 / 欢迎卡
 ├─ Settings             设备、输出目录、画质、浮窗位置
 ├─ RecorderBridge       启动/附着录制进程，JSON lines IPC，看门狗
 ├─ RelayClient          WSS 连接、重连、hello/state 上报、指令分发
@@ -29,7 +29,8 @@ Recorder（录制进程，无 UI，CLI）
 ### 1.1 状态机（App）
 
 ```
-idle ──权限+会话码+设备 ok──► preflight ──全绿──► ready
+idle ──权限+设备 ok──► preflight ──全绿──► joining(输邀请码, GET /api/join) ──成功──► ready
+                                                  joining ──失败──► joining(行内报错，可重输)
 ready ──start(本地/远程)──► countdown(3s) ──► recording
 recording ──stop──► stopping(finalize) ──► postprocess(宫格图) ──► uploading ──► ready
 任一状态 ──finish_task──► finishing ──► exit
@@ -61,7 +62,7 @@ recording ──stop──► stopping(finalize) ──► postprocess(宫格图
 
 - App 与 Recorder 各自写滚动日志到输出目录 `log.txt`（同一次录制）与应用日志目录；级别 info 以上。
 - 每条 `event` 同时写本地日志与上报。
-- 「文件」面板提供「上传日志」按钮，打包最近 3 次会话日志到对象存储供排查。
+- 「文件」面板提供「上传日志」按钮，打包最近 3 次房间日志到对象存储供排查。
 
 ## 2. macOS 实现
 
