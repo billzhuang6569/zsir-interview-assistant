@@ -1,0 +1,76 @@
+{
+  "checkedAtUTC": "2026-10-21T13:03:09.5750893Z",
+  "os": "Microsoft Windows 11 专业版",
+  "version": "10.0.26200",
+  "architecture": "64-bit",
+  "graphics": [
+    {
+      "Name": "Todesk Virtual Display Adapter",
+      "DriverVersion": "16.44.2.509"
+    },
+    {
+      "Name": "NVIDIA GeForce RTX 3090",
+      "DriverVersion": "32.0.15.9186"
+    }
+  ],
+  "devices": [
+    {
+      "Class": "AudioEndpoint",
+      "FriendlyName": "Line 1 (Virtual Audio Cable)",
+      "Status": "OK"
+    },
+    {
+      "Class": "AudioEndpoint",
+      "FriendlyName": "扬声器 (ToDesk Virtual Audio)",
+      "Status": "OK"
+    },
+    {
+      "Class": "AudioEndpoint",
+      "FriendlyName": "扬声器 (Steam Streaming Speakers)",
+      "Status": "OK"
+    },
+    {
+      "Class": "AudioEndpoint",
+      "FriendlyName": "麦克风 (Steam Streaming Microphone)",
+      "Status": "OK"
+    },
+    {
+      "Class": "AudioEndpoint",
+      "FriendlyName": "Line 1 (Virtual Audio Cable)",
+      "Status": "OK"
+    },
+    {
+      "Class": "AudioEndpoint",
+      "FriendlyName": "扬声器 (Steam Streaming Microphone)",
+      "Status": "OK"
+    },
+    {
+      "Class": "AudioEndpoint",
+      "FriendlyName": "麦克风 (ROG DELTA II (2.4GHz))",
+      "Status": "OK"
+    },
+    {
+      "Class": "AudioEndpoint",
+      "FriendlyName": "麦克风 (ToDesk Virtual Audio)",
+      "Status": "OK"
+    },
+    {
+      "Class": "AudioEndpoint",
+      "FriendlyName": "耳机 (ROG DELTA II (2.4GHz))",
+      "Status": "OK"
+    }
+  ],
+  "camerasFound": 0,
+  "graphicsCaptureSupportedInSSHSession": null,
+  "graphicsCaptureCheckError": "使用“0”个参数调用“IsSupported”时发生异常:“指定的服务未安装。\r\n\r\n指定的服务未安装。\r\n”",
+  "tools": [
+    "dotnet.exe",
+    "node.exe"
+  ],
+  "dotnetSDKs": [
+    "8.0.426"
+  ],
+  "sessionID": 0,
+  "nativeClientPresentInRepository": false,
+  "note": "Preflight only: no real media capture, no Windows product runtime or long-duration acceptance."
+}

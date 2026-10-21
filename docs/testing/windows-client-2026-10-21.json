@@ -1,0 +1,91 @@
+{
+  "startedAt": "2026-10-21T13:38:29.9859648+00:00",
+  "productClient": true,
+  "microphoneOpened": false,
+  "audioPackets": 198,
+  "audioToneStartsSeconds": [
+    5.14,
+    10.14,
+    15.13
+  ],
+  "videoFlashStartsSeconds": [
+    5.066667,
+    10.1,
+    15.1
+  ],
+  "audioMinusVideoSeconds": [
+    0.07333299999999987,
+    0.040000000000000924,
+    0.030000000000001137
+  ],
+  "fullDecodePassed": true,
+  "missingDeviceRejected": true,
+  "interruptedVideoReadable": true,
+  "encoderInterruptionHandled": true,
+  "audioFileChecksPassed": true,
+  "state": "passed",
+  "finishedAt": "2026-10-21T13:39:03.9254954+00:00",
+  "platform": "Windows 11 Pro x64, .NET 8.0.426, FFmpeg 9.0.2, libx264 software",
+  "audioDevice": "ROG DELTA II (2.4GHz), system default",
+  "media": {
+    "durationSeconds": 20.3,
+    "bytes": 677193,
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 2560,
+        "height": 1440,
+        "avg_frame_rate": "30/1",
+        "duration": "20.300000",
+        "nb_frames": "609"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2,
+        "avg_frame_rate": "0/0",
+        "duration": "20.300000",
+        "nb_frames": "953"
+      }
+    ]
+  },
+  "secondMedia": {
+    "durationSeconds": 6.1,
+    "bytes": 185238,
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 2560,
+        "height": 1440,
+        "avg_frame_rate": "30/1",
+        "duration": "6.100000",
+        "nb_frames": "183"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2,
+        "avg_frame_rate": "0/0",
+        "duration": "6.100000",
+        "nb_frames": "287"
+      }
+    ]
+  },
+  "testDirectoryRelativeToVideos": "ZSir Client Tests/Run-59054ba4-4e97-4d94-9b71-88c61535cdaf",
+  "interruptedReadableSeconds": 2.033333,
+  "interruptedReportState": "needs_review",
+  "windowExcluded": "Visually checked earlier successful client recording; application window absent",
+  "limitations": [
+    "Short tests only; no 1h+ acceptance",
+    "No camera or microphone capture",
+    "No physical unplug, disk-full, sleep or power-loss test",
+    "No Final Cut Pro import test",
+    "Intermediate media retained; automatic Windows recovery UI not implemented"
+  ],
+  "testHarnessCorrection": "A prior run had test scene occlusion by another app; test-only scene set TopMost before final passing run",
+  "fixVerified": "flush_packets enabled after short forced termination initially left unreadable MP4 header"
+}

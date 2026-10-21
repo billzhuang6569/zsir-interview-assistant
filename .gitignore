@@ -9,6 +9,7 @@ node_modules/
 dist/
 build/
 DerivedData/
+.build/
 .vs/
 *.log
 recordings/
@@ -17,3 +18,7 @@ recovery/
 *.mov
 *.mkv
 *.wav
+
+clients/windows/bin/
+clients/windows/obj/
+*.f32

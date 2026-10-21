@@ -1,0 +1,10 @@
+version = 1
+name = "庄Sir采访录制助手"
+
+[setup]
+script = ""
+
+[[actions]]
+name = "Run"
+icon = "run"
+command = "./script/build_and_run.sh"

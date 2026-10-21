@@ -1,0 +1,28 @@
+{
+  "date": "2026-10-21",
+  "platform": "macOS",
+  "build": "passed",
+  "signature": "ad-hoc verification passed",
+  "bundleName": "庄Sir采访录制助手",
+  "icon": "REC / Zsir ICNS matches bundled asset",
+  "expandedScreenshotPixels": [
+    672,
+    684
+  ],
+  "collapsedScreenshotPixels": [
+    672,
+    436
+  ],
+  "manualChecks": [
+    "three mode switches",
+    "collapse reduces window height; expand restores content",
+    "dark settings sheet opens and closes",
+    "final app left running in both-mode ready state"
+  ],
+  "notTested": [
+    "long recording",
+    "Final Cut Pro import",
+    "all display scaling and accessibility settings",
+    "fault-injection of output-directory failure"
+  ]
+}
