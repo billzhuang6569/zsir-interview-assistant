@@ -3,7 +3,7 @@
   <h1>庄Sir采访录制助手</h1>
   <p><strong>把采访素材，高清留在嘉宾电脑里。</strong></p>
   <p>选择画面，点击录制。一个安静待在屏幕边缘的本地录制小工具。</p>
-  <p><a href="https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.1.0-preview.1">下载预览版</a> · <a href="#三步开始录制">开始使用</a> · <a href="#能力与验证范围">支持范围</a> · <a href="docs/product.md">产品设计</a></p>
+  <p><a href="https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.1.0">下载 macOS 版</a> · <a href="#三步开始录制">开始使用</a> · <a href="#能力与验证范围">支持范围</a> · <a href="docs/product.md">产品设计</a></p>
 </div>
 
 <p align="center">
@@ -30,20 +30,20 @@ macOS 可选择只录摄像头、只录桌面或同时录两路；Windows 当前
 
 ## 下载
 
-当前版本为 **v0.1.0-preview.1 开发预览版**。请先试录并检查声音与画面，再决定是否用于你的场景；尚未完成正式长采访验收。
+macOS 当前版本为 **v0.1.0**；Windows 延续 **v0.1.0-preview.1**。请先试录并检查声音与画面，再决定是否用于你的场景；尚未完成正式长采访验收。
 
 | 你的电脑 | 下载 | 要求与说明 |
 | --- | --- | --- |
-| Mac · Apple Silicon | [macOS ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.1.0-preview.1/ZSirCapture-0.1.0-preview.1-macos-arm64.zip) | macOS 14 或更新版本 |
-| Mac · Intel | [macOS Intel](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.1.0-preview.1/ZSirCapture-0.1.0-preview.1-macos-x86_64.zip) | macOS 14 或更新版本；验证情况见下方 |
+| Mac · Apple Silicon | [macOS ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.1.0/ZSirCapture-0.1.0-macos-arm64.zip) | macOS 14 或更新版本 |
+| Mac · Intel | [macOS Intel](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.1.0/ZSirCapture-0.1.0-macos-x86_64.zip) | macOS 14 或更新版本；验证情况见下方 |
 | Windows · Intel / AMD | [Windows x64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.1.0-preview.1/ZSirCapture-0.1.0-preview.1-windows-x64.zip) | Windows 10 2004 或更新版本 |
 | Windows · ARM | [Windows ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.1.0-preview.1/ZSirCapture-0.1.0-preview.1-windows-arm64.zip) | Windows 11 ARM64；界面与 .NET 为 ARM64，FFmpeg 编码工具使用 x64 仿真 |
 
-[完整发布说明](docs/releases/0.1.0-preview.1.md) · [SHA-256 校验文件](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.1.0-preview.1/SHA256SUMS.txt)
+[macOS 发布说明](docs/releases/0.1.0.md) · [macOS SHA-256 校验文件](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.1.0/SHA256SUMS.txt) · [Windows 预览版说明与校验](https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.1.0-preview.1)
 
 ### 三步开始录制
 
-**1. 打开应用。** Mac 解压后打开「庄Sir采访录制助手.app」，按系统提示允许摄像头、话筒及屏幕录制权限。Windows 解压后先运行 `Install-RecordingTools.cmd`，完成编码工具安装，再打开 `ZSirCapture.Windows.exe`；无需另装 .NET。
+**1. 打开应用。** Mac 解压后打开「庄Sir采访录制助手.app」，首次打开按引导选择「摄像头」「桌面」或「摄像头+桌面」，逐项允许所需权限，完成后进入录制小窗。拒绝过的权限可通过引导中的「打开系统设置」调整，返回后重新检查；也可稍后从录制设置中继续。Windows 解压后先运行 `Install-RecordingTools.cmd`，完成编码工具安装，再打开 `ZSirCapture.Windows.exe`；无需另装 .NET。
 
 **2. 选好设备，做一次试录。** 选择要录的画面、声音设备和保存位置，通过实时预览确认构图。说几句话、播放一段声音，停止后检查保存的视频。建议佩戴耳机，减少外放声音被话筒收进人物素材。
 

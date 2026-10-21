@@ -31,12 +31,12 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>CFBundleShortVersionString</key><string>0.1.0</string>
-<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleVersion</key><string>2</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSPrincipalClass</key><string>NSApplication</string>
 <key>NSCameraUseContinuityCameraDeviceType</key><true/>
-<key>NSCameraUsageDescription</key><string>仅在你点击开始试录后，将摄像头画面保存到本地采访素材。</string>
-<key>NSMicrophoneUsageDescription</key><string>仅在你点击开始试录后，将话筒声音录入摄像头素材。</string>
+<key>NSCameraUsageDescription</key><string>允许后，仅在你点击开始录制时采集摄像头画面，保存为本地采访素材。</string>
+<key>NSMicrophoneUsageDescription</key><string>允许后，仅在你点击开始录制时采集话筒声音，录入本地摄像头素材。</string>
 </dict></plist>
 PLIST
 codesign --force --sign - "$APP_BUNDLE"

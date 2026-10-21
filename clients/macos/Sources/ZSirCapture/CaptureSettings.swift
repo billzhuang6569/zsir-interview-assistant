@@ -27,6 +27,12 @@ struct CaptureSettings: View {
                 Button("刷新设备") { model.refreshDevices() }.disabled(model.busy)
             }
             Divider()
+            Button("权限设置…") {
+                model.settingsVisible = false
+                DispatchQueue.main.async {
+                    model.permissions.present(for: model.mode, busy: model.busy)
+                }
+            }.disabled(model.busy)
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("素材目录").font(.headline)

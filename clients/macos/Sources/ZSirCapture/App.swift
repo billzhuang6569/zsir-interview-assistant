@@ -5,7 +5,7 @@ import RecordingCore
 @MainActor
 final class CaptureModel: ObservableObject {
     @Published var phase = "准备就绪"
-    @Published var detail = "素材仅保存在本机"
+    @Published var detail = ""
     @Published var busy = false
     @Published var canStop = false
     @Published var recordedSeconds: TimeInterval = 0
@@ -18,8 +18,12 @@ final class CaptureModel: ObservableObject {
         didSet { UserDefaults.standard.set(root.path, forKey: "outputDirectory") }
     }
     @Published var lastTake: URL?
+    let permissions: PermissionSetup
     @Published var mode: RecordingMode = .both {
-        didSet { if !busy { clearPreviews() } }
+        didSet {
+            permissions.defaults.set(mode.rawValue, forKey: "recordingMode")
+            if !busy { clearPreviews() }
+        }
     }
     let cameraPreview = LivePreviewFeed()
     let desktopPreview = LivePreviewFeed()
@@ -81,8 +85,12 @@ final class CaptureModel: ObservableObject {
         engine?.setPreviewEnabled(previewVisible)
     }
 
-    init() {
-        if let saved = UserDefaults.standard.string(forKey: "outputDirectory"), !saved.isEmpty {
+    convenience init() { self.init(permissions: PermissionSetup()) }
+
+    init(permissions: PermissionSetup) {
+        self.permissions = permissions
+        mode = RecordingMode(rawValue: permissions.defaults.string(forKey: "recordingMode") ?? "") ?? .both
+        if let saved = permissions.defaults.string(forKey: "outputDirectory"), !saved.isEmpty {
             root = URL(fileURLWithPath: saved, isDirectory: true)
         } else {
             root = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
@@ -101,7 +109,12 @@ final class CaptureModel: ObservableObject {
     }
 
     func start() {
-        guard !busy else { return }
+        guard !busy, !permissions.visible, permissions.requesting == nil else { return }
+        permissions.refresh(for: mode)
+        guard permissions.ready(for: mode) else {
+            permissions.present(for: mode, busy: busy)
+            return
+        }
         generation += 1
         let currentGeneration = generation
         clearPreviews()
@@ -249,6 +262,11 @@ enum CaptureApp {
     @MainActor static func main() {
         let app = NSApplication.shared
         if CommandLine.arguments.contains("--check-recording-ui") { RecordingPresentationChecks.run(); return }
+        if CommandLine.arguments.contains("--check-permissions") {
+            Task { await PermissionSetupChecks.run(); exit(0) }
+            app.run()
+            return
+        }
         let delegate = AppDelegate()
         app.delegate = delegate
         app.run()

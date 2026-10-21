@@ -4,6 +4,12 @@ import RecordingCore
 
 struct CaptureView: View {
     @ObservedObject var model: CaptureModel
+    @ObservedObject var permissions: PermissionSetup
+
+    init(model: CaptureModel) {
+        self.model = model
+        self.permissions = model.permissions
+    }
     private let accent = Color(red: 1, green: 0.39, blue: 0.20)
 
     var body: some View {
@@ -25,8 +31,10 @@ struct CaptureView: View {
                     Spacer()
                     Text("本地保存").font(.system(size: 10)).foregroundStyle(.secondary)
                 }
-                Text(model.detail).font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                if !model.detail.isEmpty {
+                    Text(model.detail).font(.system(size: 11)).monospacedDigit().foregroundStyle(.secondary)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
             }
             if model.canStop || model.recordedSeconds > 0 {
                 HStack(alignment: .firstTextBaseline) {
@@ -40,7 +48,7 @@ struct CaptureView: View {
             }
             Picker("录制机位", selection: $model.mode) {
                 ForEach(RecordingMode.allCases) { mode in Text(mode.title).tag(mode) }
-            }.pickerStyle(.segmented).labelsHidden().disabled(model.busy)
+            }.pickerStyle(.segmented).labelsHidden().disabled(model.busy || permissions.requesting != nil)
 
             VStack(spacing: 8) {
                 Button { model.togglePreview() } label: {
@@ -71,13 +79,13 @@ struct CaptureView: View {
                     Label(model.canStop ? "停止并保存" : "开始录制", systemImage: model.canStop ? "stop.fill" : "record.circle")
                         .font(.system(size: 12, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 3)
                 }
-                .disabled(model.busy && !model.canStop).buttonStyle(RecorderActionStyle(accent: accent))
+                .disabled((model.busy && !model.canStop) || permissions.requesting != nil).buttonStyle(RecorderActionStyle(accent: accent))
                 Button { model.reveal() } label: { Image(systemName: "folder").frame(width: 20, height: 20) }
                     .help("打开素材目录").accessibilityLabel("打开素材目录")
                 Button { model.refreshDevices(); model.scanRecovery(); model.settingsVisible = true } label: {
                     Image(systemName: model.recoverable.isEmpty ? "slider.horizontal.3" : "exclamationmark.arrow.triangle.2.circlepath")
                         .frame(width: 20, height: 20)
-                }.disabled(model.busy).help("设备、保存位置与素材恢复").accessibilityLabel("录制设置")
+                }.disabled(model.busy || permissions.requesting != nil).help("设备、保存位置与素材恢复").accessibilityLabel("录制设置")
             }.controlSize(.regular)
         }
         .padding(16).frame(width: 336).fixedSize(horizontal: false, vertical: true)
@@ -90,7 +98,13 @@ struct CaptureView: View {
         })
         .preferredColorScheme(.dark).ignoresSafeArea()
         .sheet(isPresented: $model.settingsVisible) { CaptureSettings(model: model).preferredColorScheme(.dark) }
-        .onAppear { model.scanRecovery() }
+        .sheet(isPresented: $permissions.visible) {
+            PermissionSetupView(model: model, setup: permissions).preferredColorScheme(.dark)
+        }
+        .onAppear {
+            model.scanRecovery()
+            permissions.present(for: model.mode, busy: model.busy, firstLaunch: true)
+        }
         .alert("录制提示", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) {
             Button("知道了") { model.error = nil }
         } message: { Text(model.error ?? "") }

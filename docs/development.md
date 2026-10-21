@@ -54,7 +54,7 @@
 
 构建和自检命令见 [Windows 说明](../clients/windows/README.md)。当前驱动不兼容此次 FFmpeg 的 NVENC API，因此使用软件编码，不更改用户显卡驱动。
 
-## 下一版本优化 1：macOS 首次权限引导（计划，未实现）
+## 下一版本优化 1：macOS 首次权限引导（v0.1.0）
 
 关联 [issue #21](https://github.com/billzhuang6569/zsir-interview-assistant/issues/21)。本计划针对 `main` / `clients/macos`，基线为 `36efcab`；不移植 `claude` 分支 #14 / #16 的远程客户端架构。文档标题 v0.3 是既有开发文档编号，不作为下一发行版本号；本轮不更改版本号、打包或发布。
 
@@ -117,3 +117,11 @@
 - 实现后最小检查：`swift run --package-path clients/macos ZSirCapture --check-recording-ui`、`swift run --package-path clients/macos CaptureChecks`，并在应用空闲退出后构建 .app 验证。不能用模拟断言替代 TCC 实测。
 
 交付顺序：本计划 PR 评审 → 实施与状态自检 → 真机权限和短录制验收 → 单独决定合并与下一版发行。计划 PR 用 Refs 关联 issue，合并计划不关闭功能 issue。
+
+### 已确认补充范围与执行授权
+
+主界面「双路」改为「摄像头+桌面」，移除初始「素材仅保存在本机」及空白占位，保留动态录制状态。2026-10-21 用户授权实施、验证、合并及正式 Release；以上“计划阶段不发布”的限制仅描述初次提案阶段。此次发行 macOS v0.1.0，Windows 延续既有预览包。
+
+### v0.1.0 实施结果
+
+PermissionSetup 集中管理权限读取、串行请求与引导状态；PermissionSetupView 提供三步原生 sheet。CaptureModel 持久化录制方式并在创建素材前复查权限，既有 CaptureEngine 保留最终采集校验。录制设置可重新进入。未引入新依赖、未修改编码器和恢复格式。测试及尚未覆盖的真实环境见[验收记录](testing/macos-onboarding-2026-10-21.md)。本节前面的接口位置与验收矩阵是实施计划，不表示所有真机组合均已完成。
