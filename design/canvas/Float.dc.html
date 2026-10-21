@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>客户端角落浮窗 · 状态</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#2a2c33;color:#e8e9ec;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-size:13px;line-height:1.4}
+a{color:#8fb8ff}a:hover{color:#b7d1ff}
+button{font-family:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width:760px;height:520px;box-sizing:border-box;padding:28px 32px;background:#2a2c33;display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:28px 32px;align-content:start">
+
+  <!-- 1 就绪 -->
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div style="font-size:12px;color:#aab0ba">① 就绪 · 已连接导演（280×96）</div>
+    <div style="width:280px;height:96px;box-sizing:border-box;border-radius:12px;background:rgba(20,21,24,.94);border:1px solid #3a3d45;box-shadow:0 8px 24px rgba(0,0,0,.4);padding:10px 12px;display:flex;flex-direction:column;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:8px;height:8px;border-radius:50%;background:#3ecf8e"></span>
+        <span style="font-weight:700">就绪</span>
+        <span style="color:#c9ccd2">张三</span>
+        <span style="color:#9a9fa8;font-size:12px">· 已连接导演</span>
+        <span style="flex:1"></span>
+        <button type="button" aria-label="设置" style="width:24px;height:24px;border:0;background:transparent;color:#9a9fa8;padding:0;display:flex;align-items:center;justify-content:center"><svg aria-hidden="true" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"></path></svg></button>
+        <button type="button" aria-label="收起" style="width:24px;height:24px;border:0;background:transparent;color:#9a9fa8;padding:0;font-size:14px">—</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#c9ccd2">
+        <span><span style="color:#9a9fa8">摄像头</span> 1080p <span style="color:#3ecf8e">✓</span></span>
+        <span><span style="color:#9a9fa8">屏幕</span> 2560×1440 <span style="color:#3ecf8e">✓</span></span>
+        <span style="display:flex;align-items:flex-end;gap:1px;height:10px" aria-label="话筒电平"><span style="width:3px;height:4px;background:#3ecf8e"></span><span style="width:3px;height:8px;background:#3ecf8e"></span><span style="width:3px;height:10px;background:#3ecf8e"></span><span style="width:3px;height:6px;background:#3ecf8e"></span><span style="width:3px;height:3px;background:#3a3d45"></span></span>
+        <span style="display:flex;align-items:flex-end;gap:1px;height:10px" aria-label="系统声电平"><span style="width:3px;height:4px;background:#5b9cf5"></span><span style="width:3px;height:3px;background:#5b9cf5"></span><span style="width:3px;height:3px;background:#3a3d45"></span><span style="width:3px;height:3px;background:#3a3d45"></span><span style="width:3px;height:3px;background:#3a3d45"></span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:11px;color:#9a9fa8">剩余 312 GB</span>
+        <button type="button" style="height:28px;padding:0 14px;border-radius:7px;border:1px solid #e5484d;background:#e5484d;color:#fff;font-weight:700;font-size:12px;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#fff"></span>开始录制</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2 倒计时 -->
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div style="font-size:12px;color:#aab0ba">② 倒计时（导演远程触发，浮窗强制显示）</div>
+    <div style="width:280px;height:96px;box-sizing:border-box;border-radius:12px;background:rgba(20,21,24,.94);border:1px solid #e5484d;box-shadow:0 8px 24px rgba(0,0,0,.4);padding:10px 12px;display:flex;align-items:center;gap:14px">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:44px;font-weight:700;color:#ff8a8e;line-height:1;min-width:48px;text-align:center">3</span>
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <span style="font-weight:700">即将开始录制</span>
+        <span style="font-size:12px;color:#c9ccd2">李导 发起 · 两路</span>
+        <span style="font-size:11px;color:#9a9fa8">摄像头、话筒、屏幕、系统声</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3 录制中 -->
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div style="font-size:12px;color:#aab0ba">③ 录制中 · 红点常亮 · 停止需长按</div>
+    <div style="width:280px;height:96px;box-sizing:border-box;border-radius:12px;background:rgba(20,21,24,.94);border:1px solid #3a3d45;box-shadow:0 8px 24px rgba(0,0,0,.4);padding:10px 12px;display:flex;flex-direction:column;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:10px;height:10px;border-radius:50%;background:#e5484d;box-shadow:0 0 0 3px rgba(229,72,77,.3)"></span>
+        <span style="font-weight:700;color:#ff8a8e">录制中</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:15px">00:14:32</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;color:#9a9fa8">可录 ≈ 9 小时</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;font-size:12px;color:#c9ccd2">
+        <span>A <span style="color:#3ecf8e">✓</span> <span style="font-family:'JetBrains Mono',monospace;color:#9a9fa8">1.18 GB</span></span>
+        <span>B <span style="color:#3ecf8e">✓</span> <span style="font-family:'JetBrains Mono',monospace;color:#9a9fa8">1.05 GB</span></span>
+        <span style="display:flex;align-items:flex-end;gap:1px;height:10px" aria-label="话筒电平"><span style="width:3px;height:5px;background:#3ecf8e"></span><span style="width:3px;height:9px;background:#3ecf8e"></span><span style="width:3px;height:7px;background:#3ecf8e"></span><span style="width:3px;height:10px;background:#3ecf8e"></span><span style="width:3px;height:4px;background:#3a3d45"></span></span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:11px;color:#9a9fa8">录制不受网络影响</span>
+        <button type="button" style="height:28px;padding:0 14px;border-radius:7px;border:1px solid #3a3d45;background:#23252b;color:#e8e9ec;font-weight:500;font-size:12px;display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;background:#e8e9ec;border-radius:2px"></span>长按停止</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4 警告 -->
+  <div style="display:flex;flex-direction:column;gap:10px">
+    <div style="font-size:12px;color:#aab0ba">④ 录制中有警告（示例：磁盘不足）</div>
+    <div style="width:280px;height:96px;box-sizing:border-box;border-radius:12px;background:rgba(20,21,24,.94);border:1px solid #f0b429;box-shadow:0 8px 24px rgba(0,0,0,.4);padding:10px 12px;display:flex;flex-direction:column;justify-content:space-between">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="width:10px;height:10px;border-radius:50%;background:#e5484d;box-shadow:0 0 0 3px rgba(229,72,77,.3)"></span>
+        <span style="font-weight:700;color:#ff8a8e">录制中</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:15px">01:48:07</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;color:#f0b429;font-weight:700">⚠ 磁盘不足</span>
+      </div>
+      <div style="font-size:12px;color:#f6cf6b">剩余 8 GB，约可再录 40 分钟。低于 2 GB 将自动安全停止。</div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <span style="font-size:11px;color:#9a9fa8">已通知导演</span>
+        <button type="button" style="height:28px;padding:0 14px;border-radius:7px;border:1px solid #3a3d45;background:#23252b;color:#e8e9ec;font-weight:500;font-size:12px;display:flex;align-items:center;gap:6px"><span style="width:9px;height:9px;background:#e8e9ec;border-radius:2px"></span>长按停止</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 说明 -->
+  <div style="grid-column:1 / -1;display:flex;gap:24px;flex-wrap:wrap;padding:14px 16px;border-radius:10px;background:#1d1f24;border:1px solid #3a3d45;font-size:12px;color:#c9ccd2">
+    <span><b style="color:#e8e9ec">置顶、不抢焦点</b>：NSPanel nonactivating / WPF ShowActivated=false</span>
+    <span><b style="color:#e8e9ec">不被录进去</b>：SCContentFilter 排除自身 / WDA_EXCLUDEFROMCAPTURE</span>
+    <span><b style="color:#e8e9ec">可拖到任意角落</b>，收起后只剩托盘图标</span>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":760,"height":520}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>宫格图检查弹层</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141518;color:#e8e9ec;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-size:14px;line-height:1.5}
+a{color:#8fb8ff}a:hover{color:#b7d1ff}
+button{font-family:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width:1100px;height:760px;box-sizing:border-box;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:30px">
+  <div role="dialog" aria-labelledby="sheetTitle" style="width:1000px;height:700px;box-sizing:border-box;border-radius:14px;background:#1d1f24;border:1px solid #3a3d45;box-shadow:0 20px 60px rgba(0,0,0,.5);display:flex;flex-direction:column;overflow:hidden">
+    <div style="display:flex;align-items:center;gap:16px;padding:16px 22px;border-bottom:1px solid #2c2f36">
+      <h2 id="sheetTitle" style="margin:0;font-size:18px">宫格图 · 张三 · rec_01HX…</h2>
+      <span style="font-size:12px;color:#9a9fa8">每 30 秒一帧 · 时长 00:14:32 · 共 30 格</span>
+      <span style="flex:1"></span>
+      <div style="display:flex;border:1px solid #3a3d45;border-radius:8px;overflow:hidden">
+        <button type="button" onClick="{{pickCam}}" style="height:34px;padding:0 14px;border:0;background:{{camBg}};color:{{camFg}};font-size:13px;font-weight:500">A · 摄像头</button>
+        <button type="button" onClick="{{pickScreen}}" style="height:34px;padding:0 14px;border:0;background:{{screenBg}};color:{{screenFg}};font-size:13px;font-weight:500">B · 屏幕</button>
+      </div>
+      <button type="button" style="height:34px;padding:0 12px;border-radius:7px;border:1px solid #3a3d45;background:transparent;color:#c9ccd2;font-size:12px">下载原图</button>
+      <button type="button" aria-label="关闭" style="width:34px;height:34px;border-radius:7px;border:1px solid #3a3d45;background:transparent;color:#c9ccd2;font-size:16px">×</button>
+    </div>
+
+    <div style="flex:1;min-height:0;overflow:auto;padding:18px 22px">
+      <div style="display:grid;grid-template-columns:repeat(6, minmax(0, 1fr));gap:10px">
+        <sc-for list="{{cells}}" as="cell" hint-placeholder-count="30">
+          <figure style="margin:0;position:relative;aspect-ratio:16/9;border-radius:6px;background:{{cell.bg}};border:1px solid #2c2f36;display:flex;align-items:center;justify-content:center;overflow:hidden">
+            <span style="font-size:11px;color:#5c616b">{{cell.label}}</span>
+            <figcaption style="position:absolute;left:6px;bottom:5px;padding:2px 6px;border-radius:4px;background:rgba(0,0,0,.7);font-family:'JetBrains Mono',monospace;font-size:11px;color:#e8e9ec">{{cell.tc}}</figcaption>
+          </figure>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:14px;padding:12px 22px;border-top:1px solid #2c2f36;background:#1a1b20;font-size:13px">
+      <span style="display:flex;align-items:center;gap:6px;color:#3ecf8e"><span style="width:8px;height:8px;border-radius:50%;background:#3ecf8e"></span>30 格全部有画面，未检测到黑场</span>
+      <span style="flex:1"></span>
+      <span style="color:#9a9fa8">点击任一格放大查看</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1100,"height":760}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { track: 'cam' }; }
+  renderVals() {
+    const cam = this.state.track === 'cam';
+    const cells = [];
+    for (let i = 0; i < 30; i++) {
+      const s = i * 30;
+      const mm = String(Math.floor(s / 60)).padStart(2, '0');
+      const ss = String(s % 60).padStart(2, '0');
+      cells.push({ tc: '00:' + mm + ':' + ss, label: cam ? '摄像头' : '屏幕', bg: cam ? '#121317' : '#0e1116' });
+    }
+    return {
+      cells,
+      camBg: cam ? '#e5484d' : '#23252b', camFg: cam ? '#ffffff' : '#c9ccd2',
+      screenBg: cam ? '#23252b' : '#e5484d', screenFg: cam ? '#c9ccd2' : '#ffffff',
+      pickCam: () => this.setState({ track: 'cam' }),
+      pickScreen: () => this.setState({ track: 'screen' })
+    };
+  }
+}
+</script>
+</body>
+</html>

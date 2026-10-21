@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>控制端 · 会话页</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#141518;color:#e8e9ec;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-size:14px;line-height:1.5}
+a{color:#8fb8ff}a:hover{color:#b7d1ff}
+button{font-family:inherit;cursor:pointer}
+input[type=radio]{accent-color:#e5484d;width:16px;height:16px;margin:0}
+</style>
+</helmet>
+
+<div style="position:relative;min-height:1040px;display:flex;flex-direction:column;background:#141518">
+
+  <!-- 顶栏 -->
+  <header style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:0 24px;height:56px;border-bottom:1px solid #2c2f36;background:#17181c">
+    <div style="display:flex;align-items:center;gap:10px">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#e5484d;box-shadow:0 0 0 3px rgba(229,72,77,.25)"></span>
+      <span style="font-weight:700;font-size:16px">庄Sir线上采访助手</span>
+      <span style="color:#9a9fa8;font-size:13px">控制端</span>
+    </div>
+    <div style="flex:1 1 200px"></div>
+    <div style="display:flex;align-items:center;gap:8px;color:#9a9fa8;font-size:13px">
+      <span>我是</span>
+      <span style="color:#e8e9ec;font-weight:500;padding:4px 10px;border:1px solid #2c2f36;border-radius:6px">李导</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#3ecf8e">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3ecf8e"></span>
+      <span>已连接服务器</span>
+    </div>
+    <button type="button" style="height:36px;padding:0 14px;border-radius:8px;border:1px solid #3a3d45;background:#23252b;color:#e8e9ec;font-size:13px;font-weight:500">+ 新建会话</button>
+  </header>
+
+  <div style="display:flex;flex-wrap:wrap;flex:1">
+
+    <!-- 左栏 会话列表 -->
+    <nav aria-label="会话列表" style="flex:0 1 240px;min-width:200px;border-right:1px solid #2c2f36;background:#17181c;padding:16px 12px;display:flex;flex-direction:column;gap:6px">
+      <div style="font-size:12px;color:#9a9fa8;padding:4px 10px;letter-spacing:.04em">今天</div>
+      <a href="#" aria-current="page" style="display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:8px;background:#26282f;color:#e8e9ec;text-decoration:none">
+        <span style="font-weight:500">2026-10-28 王老师</span>
+        <span style="font-size:12px;color:#e5484d">● 录制中 · 1 位嘉宾在线</span>
+      </a>
+      <div style="font-size:12px;color:#9a9fa8;padding:12px 10px 4px;letter-spacing:.04em">最近 7 天</div>
+      <a href="#" style="display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:8px;color:#c9ccd2;text-decoration:none">
+        <span style="font-weight:500">2026-10-24 陈工 圆桌</span>
+        <span style="font-size:12px;color:#9a9fa8">已完成 · 2 条成品已上传</span>
+      </a>
+      <a href="#" style="display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:8px;color:#c9ccd2;text-decoration:none">
+        <span style="font-weight:500">2026-10-21 内部测试</span>
+        <span style="font-size:12px;color:#9a9fa8">已完成</span>
+      </a>
+    </nav>
+
+    <!-- 主区 -->
+    <main style="flex:999 1 560px;min-width:0;padding:24px;display:flex;flex-direction:column;gap:20px">
+
+      <!-- 会话头 -->
+      <section style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding:18px 22px;border:1px solid #2c2f36;border-radius:12px;background:#1d1f24">
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:200px">
+          <h1 style="margin:0;font-size:20px;font-weight:700">2026-10-28 王老师</h1>
+          <span style="font-size:12px;color:#9a9fa8">创建于 10-27 16:20 · 会话码 7 天内有效</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:8px 14px;border:1px dashed #3a3d45;border-radius:10px">
+          <span style="font-size:12px;color:#9a9fa8">会话码</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;letter-spacing:.18em;color:#ffffff">483 920</span>
+          <button type="button" style="height:32px;padding:0 12px;border-radius:6px;border:1px solid #3a3d45;background:#23252b;color:#e8e9ec;font-size:12px">复制</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#c9ccd2">
+          <span style="color:#9a9fa8">嘉宾下载链接</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:12px;padding:6px 10px;border-radius:6px;background:#17181c;border:1px solid #2c2f36">zsir.app/d/483920</span>
+          <button type="button" style="height:32px;padding:0 12px;border-radius:6px;border:1px solid #3a3d45;background:#23252b;color:#e8e9ec;font-size:12px">复制</button>
+        </div>
+      </section>
+
+      <!-- 客户端卡片 -->
+      <section aria-label="嘉宾 张三" style="border:1px solid #3a2224;border-radius:12px;background:#1d1f24;overflow:hidden">
+        <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 22px;border-bottom:1px solid #2c2f36;background:#1a1b20">
+          <span style="font-size:16px;font-weight:700">张三</span>
+          <span style="font-size:12px;color:#9a9fa8">macOS 14.5 · 客户端 v0.3.1 · 已连接 32 分钟</span>
+          <div style="flex:1 1 40px"></div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e5484d;box-shadow:0 0 0 4px rgba(229,72,77,.22)"></span>
+            <span style="font-weight:700;color:#ff8a8e">录制中</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:22px;font-weight:700;letter-spacing:.04em">00:14:32</span>
+          </div>
+          <span style="font-size:12px;color:#9a9fa8">磁盘剩余 312 GB（约 9 小时）</span>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:20px;padding:20px 22px">
+          <!-- 两路静帧 -->
+          <div style="display:flex;flex-wrap:wrap;gap:16px;flex:1 1 560px;min-width:0">
+            <figure style="margin:0;flex:1 1 260px;min-width:0;display:flex;flex-direction:column;gap:8px">
+              <div style="position:relative;aspect-ratio:16/9;border-radius:8px;background:#0e0f12;border:1px solid #2c2f36;display:flex;align-items:center;justify-content:center;color:#5c616b;font-size:13px">
+                <span>cam 静帧 · 1920×1080</span>
+                <span style="position:absolute;left:10px;top:10px;padding:3px 8px;border-radius:5px;background:rgba(0,0,0,.65);font-size:11px;color:#e8e9ec;font-weight:500">A · 摄像头 + 话筒</span>
+              </div>
+              <figcaption style="display:flex;justify-content:space-between;font-size:12px;color:#9a9fa8">
+                <span>5 秒前</span><span style="color:#3ecf8e">自动刷新中</span>
+              </figcaption>
+            </figure>
+            <figure style="margin:0;flex:1 1 260px;min-width:0;display:flex;flex-direction:column;gap:8px">
+              <div style="position:relative;aspect-ratio:16/9;border-radius:8px;background:#0e0f12;border:1px solid #2c2f36;display:flex;align-items:center;justify-content:center;color:#5c616b;font-size:13px">
+                <span>screen 静帧 · 2560×1440</span>
+                <span style="position:absolute;left:10px;top:10px;padding:3px 8px;border-radius:5px;background:rgba(0,0,0,.65);font-size:11px;color:#e8e9ec;font-weight:500">B · 桌面 + 系统声</span>
+              </div>
+              <figcaption style="display:flex;justify-content:space-between;font-size:12px;color:#9a9fa8">
+                <span>5 秒前</span><span style="color:#3ecf8e">自动刷新中</span>
+              </figcaption>
+            </figure>
+          </div>
+
+          <!-- 指标 -->
+          <div style="flex:0 1 300px;min-width:240px;display:flex;flex-direction:column;gap:10px;font-size:13px">
+            <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:10px">
+              <div style="padding:12px;border-radius:8px;background:#17181c;border:1px solid #2c2f36;display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#9a9fa8">摄像头</span><span style="color:#3ecf8e;font-weight:700">✓</span></div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:13px">1080p · 29.9 fps</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#9a9fa8">11.2 Mbps · 1.18 GB</div>
+                <div style="display:flex;align-items:flex-end;gap:2px;height:14px" aria-label="话筒电平 -18 dB">
+                  <span style="width:4px;height:6px;background:#3ecf8e;border-radius:1px"></span><span style="width:4px;height:9px;background:#3ecf8e;border-radius:1px"></span><span style="width:4px;height:14px;background:#3ecf8e;border-radius:1px"></span><span style="width:4px;height:11px;background:#3ecf8e;border-radius:1px"></span><span style="width:4px;height:7px;background:#3ecf8e;border-radius:1px"></span><span style="width:4px;height:4px;background:#3a3d45;border-radius:1px"></span><span style="width:4px;height:4px;background:#3a3d45;border-radius:1px"></span>
+                  <span style="margin-left:6px;font-size:11px;color:#9a9fa8">话筒 −18 dB</span>
+                </div>
+              </div>
+              <div style="padding:12px;border-radius:8px;background:#17181c;border:1px solid #2c2f36;display:flex;flex-direction:column;gap:6px">
+                <div style="display:flex;justify-content:space-between;align-items:center"><span style="color:#9a9fa8">屏幕</span><span style="color:#3ecf8e;font-weight:700">✓</span></div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:13px">2560×1440 · 30 fps</div>
+                <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#9a9fa8">9.8 Mbps · 1.05 GB</div>
+                <div style="display:flex;align-items:flex-end;gap:2px;height:14px" aria-label="系统声电平 -32 dB">
+                  <span style="width:4px;height:5px;background:#5b9cf5;border-radius:1px"></span><span style="width:4px;height:4px;background:#5b9cf5;border-radius:1px"></span><span style="width:4px;height:4px;background:#3a3d45;border-radius:1px"></span><span style="width:4px;height:4px;background:#3a3d45;border-radius:1px"></span><span style="width:4px;height:4px;background:#3a3d45;border-radius:1px"></span><span style="width:4px;height:4px;background:#3a3d45;border-radius:1px"></span><span style="width:4px;height:4px;background:#3a3d45;border-radius:1px"></span>
+                  <span style="margin-left:6px;font-size:11px;color:#9a9fa8">系统声 −32 dB</span>
+                </div>
+              </div>
+            </div>
+            <div style="padding:10px 12px;border-radius:8px;background:#17181c;border:1px solid #2c2f36;display:flex;justify-content:space-between;color:#9a9fa8;font-size:12px">
+              <span>编码器</span><span style="font-family:'JetBrains Mono',monospace;color:#c9ccd2">VideoToolbox H.264 · fMP4</span>
+            </div>
+            <div style="padding:10px 12px;border-radius:8px;background:#17181c;border:1px solid #2c2f36;display:flex;justify-content:space-between;color:#9a9fa8;font-size:12px">
+              <span>画质档位</span><span style="color:#c9ccd2">推荐（≈ 9 GB/小时）</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 操作行 -->
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 22px;border-top:1px solid #2c2f36;background:#1a1b20">
+          <button type="button" style="height:40px;padding:0 18px;border-radius:8px;border:1px solid #3a3d45;background:#23252b;color:#e8e9ec;font-size:14px;font-weight:500">检查</button>
+          <button type="button" onClick="{{askStop}}" style="height:40px;padding:0 18px;border-radius:8px;border:1px solid #e5484d;background:#e5484d;color:#ffffff;font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px">
+            <span style="display:inline-block;width:12px;height:12px;background:#fff;border-radius:2px"></span>停止录制
+          </button>
+          <fieldset style="display:flex;align-items:center;gap:14px;margin:0;padding:0 4px;border:0;color:#c9ccd2;font-size:13px">
+            <legend style="padding:0;font-size:13px;color:#9a9fa8;float:left;margin-right:4px">范围</legend>
+            <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="scope" checked="{{yes}}"> 两路</label>
+            <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="scope"> 仅摄像头</label>
+            <label style="display:flex;align-items:center;gap:6px"><input type="radio" name="scope"> 仅屏幕</label>
+          </fieldset>
+          <div style="flex:1 1 40px"></div>
+          <button type="button" style="height:40px;padding:0 16px;border-radius:8px;border:1px solid #3a3d45;background:transparent;color:#c9ccd2;font-size:13px">宫格图</button>
+          <button type="button" style="height:40px;padding:0 16px;border-radius:8px;border:1px solid #3a3d45;background:transparent;color:#c9ccd2;font-size:13px">文件</button>
+          <button type="button" disabled="{{yes}}" title="两路成品上传校验通过后可用" style="height:40px;padding:0 16px;border-radius:8px;border:1px solid #2c2f36;background:transparent;color:#5c616b;font-size:13px;cursor:not-allowed">结束任务</button>
+        </div>
+      </section>
+
+      <!-- 事件日志 -->
+      <section aria-label="事件日志" style="border:1px solid #2c2f36;border-radius:12px;background:#1d1f24">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 22px;border-bottom:1px solid #2c2f36">
+          <span style="font-weight:700">事件日志</span>
+          <span style="font-size:12px;color:#9a9fa8">所有控制端共享 · 最近 200 条</span>
+        </div>
+        <ol style="list-style:none;margin:0;padding:8px 22px 12px;display:flex;flex-direction:column;gap:6px;font-size:13px;font-family:'JetBrains Mono',monospace">
+          <li style="display:flex;gap:14px"><span style="color:#5c616b">20:14:05</span><span style="color:#f0b429">警告</span><span>张三 · 10 秒内屏幕掉帧 4%（已恢复）</span></li>
+          <li style="display:flex;gap:14px"><span style="color:#5c616b">20:00:03</span><span style="color:#3ecf8e">信息</span><span>张三 · 录制开始 rec_01HX… · 两路</span></li>
+          <li style="display:flex;gap:14px"><span style="color:#5c616b">20:00:00</span><span style="color:#8fb8ff">操作</span><span>李导 点击「开始录制」（两路，倒计时 3 秒）</span></li>
+          <li style="display:flex;gap:14px"><span style="color:#5c616b">19:58:41</span><span style="color:#8fb8ff">操作</span><span>小周 点击「检查」</span></li>
+          <li style="display:flex;gap:14px"><span style="color:#5c616b">19:52:10</span><span style="color:#3ecf8e">信息</span><span>张三 · 自检通过 · VideoToolbox · 剩余 318 GB</span></li>
+          <li style="display:flex;gap:14px"><span style="color:#5c616b">19:41:27</span><span style="color:#3ecf8e">信息</span><span>张三 · 客户端上线 macOS 14.5</span></li>
+        </ol>
+      </section>
+    </main>
+  </div>
+
+  <!-- 停止确认弹层 -->
+  <sc-if value="{{confirmOpen}}" hint-placeholder-val="{{no}}">
+    <div style="position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center">
+      <div role="dialog" aria-labelledby="stopTitle" style="width:380px;padding:24px;border-radius:14px;background:#1d1f24;border:1px solid #3a3d45;display:flex;flex-direction:column;gap:14px">
+        <h2 id="stopTitle" style="margin:0;font-size:18px">停止 张三 的录制？</h2>
+        <p style="margin:0;color:#c9ccd2">已录制 <span style="font-family:'JetBrains Mono',monospace;font-weight:700">00:14:32</span>。停止后会自动生成宫格图并开始上传，不能继续接着录。</p>
+        <div style="display:flex;justify-content:flex-end;gap:10px">
+          <button type="button" onClick="{{cancelStop}}" style="height:40px;padding:0 16px;border-radius:8px;border:1px solid #3a3d45;background:transparent;color:#e8e9ec">取消</button>
+          <button type="button" onClick="{{cancelStop}}" style="height:40px;padding:0 16px;border-radius:8px;border:1px solid #e5484d;background:#e5484d;color:#fff;font-weight:700">确认停止</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1040}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { confirmOpen: false }; }
+  renderVals() {
+    return {
+      yes: true, no: false,
+      confirmOpen: this.state.confirmOpen,
+      askStop: () => this.setState({ confirmOpen: true }),
+      cancelStop: () => this.setState({ confirmOpen: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

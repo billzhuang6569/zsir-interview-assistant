@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>客户端首次启动 · 自检</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;500;700&amp;family=JetBrains+Mono:wght@500;700&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#2a2c33;color:#e8e9ec;font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,sans-serif;font-size:14px;line-height:1.5}
+a{color:#8fb8ff}a:hover{color:#b7d1ff}
+button{font-family:inherit;cursor:pointer}
+</style>
+</helmet>
+<div style="width:880px;height:620px;box-sizing:border-box;padding:30px 40px;background:#2a2c33;display:flex;align-items:center;justify-content:center">
+  <!-- 窗口 -->
+  <div style="width:800px;height:560px;box-sizing:border-box;border-radius:14px;background:#1d1f24;border:1px solid #3a3d45;box-shadow:0 16px 48px rgba(0,0,0,.45);display:flex;flex-direction:column;overflow:hidden">
+    <!-- 标题栏 -->
+    <div style="height:44px;display:flex;align-items:center;gap:12px;padding:0 16px;border-bottom:1px solid #2c2f36;background:#17181c">
+      <span style="display:flex;gap:7px"><span style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></span><span style="width:12px;height:12px;border-radius:50%;background:#febc2e"></span><span style="width:12px;height:12px;border-radius:50%;background:#28c840"></span></span>
+      <span style="font-weight:500;font-size:13px;color:#c9ccd2">庄Sir线上采访助手</span>
+    </div>
+
+    <div style="display:flex;flex:1;min-height:0">
+      <!-- 步骤栏 -->
+      <ol style="list-style:none;margin:0;padding:22px 16px;width:180px;box-sizing:border-box;border-right:1px solid #2c2f36;display:flex;flex-direction:column;gap:4px;font-size:13px">
+        <li style="display:flex;align-items:center;gap:10px;padding:8px 10px;color:#9a9fa8"><span style="width:20px;height:20px;border-radius:50%;background:#3ecf8e;color:#0e0f12;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</span>欢迎</li>
+        <li style="display:flex;align-items:center;gap:10px;padding:8px 10px;color:#9a9fa8"><span style="width:20px;height:20px;border-radius:50%;background:#3ecf8e;color:#0e0f12;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</span>系统权限</li>
+        <li style="display:flex;align-items:center;gap:10px;padding:8px 10px;color:#9a9fa8"><span style="width:20px;height:20px;border-radius:50%;background:#3ecf8e;color:#0e0f12;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</span>加入会话</li>
+        <li style="display:flex;align-items:center;gap:10px;padding:8px 10px;color:#9a9fa8"><span style="width:20px;height:20px;border-radius:50%;background:#3ecf8e;color:#0e0f12;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">✓</span>选择设备</li>
+        <li aria-current="step" style="display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;background:#26282f;color:#e8e9ec;font-weight:700"><span style="width:20px;height:20px;border-radius:50%;background:#e5484d;color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center">5</span>自检</li>
+      </ol>
+
+      <!-- 内容 -->
+      <div style="flex:1;min-width:0;padding:22px 26px;display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;flex-direction:column;gap:4px">
+          <h1 style="margin:0;font-size:20px">自检完成，一切就绪</h1>
+          <p style="margin:0;color:#9a9fa8;font-size:13px">刚才试录了 3 秒，下面是两路画面和声音的结果。确认无误后，这个窗口会收起到屏幕角落，等待导演开始。</p>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:14px">
+          <figure style="margin:0;display:flex;flex-direction:column;gap:6px">
+            <div style="aspect-ratio:16/9;border-radius:8px;background:#0e0f12;border:1px solid #2c2f36;display:flex;align-items:center;justify-content:center;color:#5c616b;font-size:12px">摄像头预览</div>
+            <figcaption style="display:flex;justify-content:space-between;font-size:12px"><span style="color:#c9ccd2">A · FaceTime HD 摄像头 · 1080p30</span><span style="color:#3ecf8e;font-weight:700">正常</span></figcaption>
+          </figure>
+          <figure style="margin:0;display:flex;flex-direction:column;gap:6px">
+            <div style="aspect-ratio:16/9;border-radius:8px;background:#0e0f12;border:1px solid #2c2f36;display:flex;align-items:center;justify-content:center;color:#5c616b;font-size:12px">屏幕预览</div>
+            <figcaption style="display:flex;justify-content:space-between;font-size:12px"><span style="color:#c9ccd2">B · 内建显示器 · 2560×1440</span><span style="color:#3ecf8e;font-weight:700">正常</span></figcaption>
+          </figure>
+        </div>
+
+        <ul style="list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:8px 14px;font-size:13px">
+          <li style="display:flex;justify-content:space-between;padding:8px 10px;border-radius:7px;background:#17181c;border:1px solid #2c2f36"><span style="color:#9a9fa8">话筒</span><span>MacBook Pro 麦克风 <span style="color:#3ecf8e">−18 dB ✓</span></span></li>
+          <li style="display:flex;justify-content:space-between;padding:8px 10px;border-radius:7px;background:#17181c;border:1px solid #2c2f36"><span style="color:#9a9fa8">系统声音</span><span>已捕获 <span style="color:#3ecf8e">✓</span></span></li>
+          <li style="display:flex;justify-content:space-between;padding:8px 10px;border-radius:7px;background:#17181c;border:1px solid #2c2f36"><span style="color:#9a9fa8">编码器</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px">VideoToolbox H.264 <span style="color:#3ecf8e">✓</span></span></li>
+          <li style="display:flex;justify-content:space-between;padding:8px 10px;border-radius:7px;background:#17181c;border:1px solid #2c2f36"><span style="color:#9a9fa8">磁盘</span><span>剩余 318 GB · 约 35 小时 <span style="color:#3ecf8e">✓</span></span></li>
+        </ul>
+
+        <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:8px;background:#16221c;border:1px solid #255a3f;font-size:12px;color:#bfe9d3">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#3ecf8e" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+          不录制时不会访问您的摄像头、麦克风和屏幕；开始前一定有 3 秒倒计时。
+        </div>
+
+        <div style="flex:1"></div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:12px;color:#9a9fa8">输出到 ~/Movies/庄Sir采访/ <a href="#">更改</a></span>
+          <div style="display:flex;gap:10px">
+            <button type="button" style="height:40px;padding:0 16px;border-radius:8px;border:1px solid #3a3d45;background:transparent;color:#e8e9ec">重新自检</button>
+            <button type="button" style="height:40px;padding:0 20px;border-radius:8px;border:1px solid #e5484d;background:#e5484d;color:#fff;font-weight:700">完成，收起到角落</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":880,"height":620}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
