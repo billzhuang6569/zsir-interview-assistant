@@ -1,3 +1,4 @@
+using System.IO;
 using ZsirRecorder;
 using System.Runtime.InteropServices;
 
@@ -15,6 +16,18 @@ foreach (var invalid in new[] {
     try { Options.Parse(invalid); } catch (ArgumentException) { rejected = true; }
     Assert(rejected, string.Join(' ', invalid));
 }
+Assert(Options.Parse(["capture", "--out", "x", "--stdin-control"]).StdinControl, "stdin flag");
+var appState = new ZsirRecorder.App.LocalState { Camera = "camera with spaces", Mic = "话筒", Display = "42" };
+Assert(appState.ExistingRecorder() == null, "fresh state never queries protected PID zero");
+Assert(appState.Selection().SequenceEqual(["--camera", "camera with spaces", "--mic", "话筒", "--display", "42"]), "GUI device arguments preserve spaces and Unicode");
+Assert(System.Text.Json.JsonSerializer.Deserialize<ZsirRecorder.App.LocalState>(System.Text.Json.JsonSerializer.Serialize(appState))!.Mic == "话筒", "settings roundtrip");
+Console.WriteLine("PASS: GUI fresh recovery state, device argument boundaries, settings roundtrip");
+int stopped = 0;
+await ZsirRecorder.Program.ReadControl(new StringReader("ignored\nstop\nstop\n"), () => stopped++);
+Assert(stopped == 1, "stop exactly once");
+await ZsirRecorder.Program.ReadControl(new StringReader(""), () => stopped++);
+Assert(stopped == 1, "EOF keeps capture running");
+Console.WriteLine("PASS: stdin flag, stop exactly once, EOF leaves capture running");
 var options = Options.Parse(["capture", "--out", "路径 with spaces", "--tracks", "screen", "--duration", "1.25"]);
 Assert(options.Output == "路径 with spaces" && options.Tracks.SequenceEqual(["screen"]) && options.Duration == 1.25, "CLI roundtrip");
 Assert(ZsirRecorder.Program.Format("screen", 3840, 2160, "recommended") == (2560, 1440, 30, 10000), "recommended screen");
@@ -34,6 +47,9 @@ Assert(MemoryMarshal.Cast<byte, float>(timeline.Read(47040, 960)).ToArray().All(
 timeline.Add(packet, 96000 + 960);
 Assert(timeline.Read(0, 960).All(b => b == 0), "ring wrap must not replay newer samples into old slots");
 Assert(timeline.Peak == .25, "peak meter");
+timeline.Add(new float[1920], 97920);
+Assert(timeline.Peak == 0, "live meter returns to silence instead of holding historical peak");
+Console.WriteLine("PASS: live audio peak returns to silence");
 Console.WriteLine("PASS: 25 assertions (CLI, quality, fallback, silence, callback jitter, QPC gaps, ring wrap)");
 
 if (args.Contains("--encoder-smoke"))

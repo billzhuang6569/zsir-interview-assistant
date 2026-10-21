@@ -3,10 +3,26 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <UseWPF>true</UseWPF>
-    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <SupportedOSPlatformVersion>10.0.18362.0</SupportedOSPlatformVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Shared/Shared.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Using Include="System" /><Using Include="System.IO" /><Using Include="System.Linq" /><Using Include="System.Collections.Generic" /><Using Include="System.Threading" /><Using Include="System.Threading.Tasks" />
+    <Compile Include="../Recorder/VideoSource.cs" Link="Preview/VideoSource.cs" />
+    <Compile Include="../Recorder/AudioSource.cs" Link="Preview/AudioSource.cs" />
+    <Compile Include="../Recorder/Native.cs" Link="Preview/Native.cs" />
+    <ProjectReference Include="../Recorder/Recorder.csproj" ReferenceOutputAssembly="false" />
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+  </ItemGroup>
+  <Target Name="CopyRecorder" AfterTargets="Build">
+    <PropertyGroup><RecorderOutput>../Recorder/bin/$(Configuration)/$(TargetFramework)/$(RuntimeIdentifier)/</RecorderOutput></PropertyGroup>
+    <ItemGroup><RecorderFiles Include="$(RecorderOutput)**/*" Exclude="$(RecorderOutput)win-x64/**/*;$(RecorderOutput)win-arm64/**/*;$(RecorderOutput)win-x86/**/*" /></ItemGroup>
+    <Copy SourceFiles="@(RecorderFiles)" DestinationFiles="@(RecorderFiles->'$(OutDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

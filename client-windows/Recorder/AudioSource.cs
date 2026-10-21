@@ -10,9 +10,10 @@ internal sealed class AudioSource : IDisposable
     readonly WasapiCapture capture;
     readonly MMDevice endpoint;
     readonly AudioTimeline timeline = new();
-    long origin;
+    long origin, lastPacket;
     internal Exception? Error;
-    internal double LevelDb => timeline.Peak > 0 ? Math.Max(-120, 20 * Math.Log10(timeline.Peak)) : -120;
+    internal double LevelDb => Stopwatch.GetElapsedTime(Interlocked.Read(ref lastPacket)).TotalSeconds <= .3 && timeline.Peak > 0
+        ? Math.Max(-120, 20 * Math.Log10(timeline.Peak)) : -120;
     internal string Name => endpoint.FriendlyName;
 
     internal AudioSource(bool loopback, string? mic)
@@ -29,6 +30,7 @@ internal sealed class AudioSource : IDisposable
             // shortcut: callback QPC approximates sample time; use native packet QPC if waveform sync fails acceptance.
             long end = (long)((Stopwatch.GetTimestamp() - t0) * (48000.0 / Stopwatch.Frequency));
             timeline.Add(MemoryMarshal.Cast<byte, float>(e.Buffer.AsSpan(0, e.BytesRecorded)), end);
+            Interlocked.Exchange(ref lastPacket, Stopwatch.GetTimestamp());
         };
         capture.RecordingStopped += (_, e) => { if (e.Exception != null) Error = e.Exception; };
     }
@@ -56,6 +58,7 @@ internal sealed class AudioTimeline
             // Preserve contiguous packets despite callback jitter; re-anchor after silence.
             if (lastEnd >= 0 && Math.Abs(end - count - lastEnd) < 4800) end = lastEnd + count;
             lastEnd = end;
+            Peak = 0;
             for (int i = 0; i < count; i++)
             {
                 long at = end - count + i;

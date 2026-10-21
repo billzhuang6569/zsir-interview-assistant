@@ -163,3 +163,15 @@ ScreenCaptureKit 排除 recorder 与父进程链中宿主应用的所有窗口�
 `session.json` 公共字段为 `version/state/startedAt/clock/hostTimeT0/devices/quality/encoder/t/tracks/levels/error`，每路含 `ok/width/height/fps/targetFPS/bytes/levelDb/audioSamples/droppedSamples/firstPTS/firstFrameOffsetMs`。Windows 的 `hostTimeT0` / `firstPTS` 使用 QPC 秒；捕获源预热后从共同 T0 输出 CFR，首帧输出偏移为 0；音频按 QPC 放入 PCM 时间缓冲，静音补零。ffmpeg 以固定帧率和样本数产生 PTS，**不以管道到达墙钟做时间戳**。正常结束标记 `finished`，错误标记 `failed`，强杀保留最后一个原子写入的 `recording` 快照。
 
 Windows CLI 必须运行在交互桌面，OpenSSH Session 0 直接捕获会报 `INTERACTIVE_SESSION_REQUIRED`；远程验收用 `/IT` 计划任务。窗口排除测试只检查隐藏窗口上的 API 返回值，视觉效果需后续独立验收。LGPL 编码兜底明确使用 `h264_mf -hw_encoding 0` 并报告 `ENCODER_FALLBACK`；不使用 x264。M1 不包含设备热插拔恢复、DirectShow 回退或显示器尺寸变化后的自动重建。
+
+### 4.2 Windows 本地 App（issue #15）
+
+`client-windows/App` 是独立 WPF 进程，深色引导与置顶浮窗，使用系统 NotifyIcon 托盘。普通构建自动将 Recorder 输出（包括 `ffmpeg/`）复制到 App 输出目录；自包含单文件发布使用 `client-windows/scripts/publish-app.ps1`，产物是 App.exe 与旁边的 zsir-recorder.exe、ffmpeg/，不制作安装包。
+
+引导 1–4 步在本机完成；5–6 步仅预留邀请码/欢迎位置。权限页用 MediaCapture 分别探测视频、音频访问并提供 Windows 设置深链。设备页显式启动预览，离页关闭捕获；预览代码通过编译链接复用 Recorder 捕获源，不在 UI 内执行正式录制。多屏需明确选择。自检调用原样 `preflight --json`，另检查用户输出目录可写与剩余空间。仅屏幕模式可在显示 CAM_NOT_FOUND 的同时通过屏幕自检；两路模式不能绕过摄像头失败。
+
+正式录制：浮窗 3 秒倒计时 → `capture --stdin-control` 子进程 → UTF-8 JSON lines 更新时长/轨道/电平；停止按钮二次确认，写入一行 `stop`，等待进程 finalize 后显示保存位置。非 0 退出显示红色 `RECORDER_CRASHED`，不会自动重录。Recorder 持有原有 PowerRequest，UI 不持有录制资源。stdout/stderr 断管不会终止录制；stdin EOF 后继续 60 秒再 finalize（遵循 §1.2），重开 App 显示旧录制状态并禁止重复开录，不重新附着旧 stdin。
+
+配置位于 `%LOCALAPPDATA%\ZsirInterview\settings.json`，原子替换；保存设备、范围、画质、目录、浮窗位置和旧 Recorder 的 PID/启动时间。默认输出 `%USERPROFILE%\Videos\庄Sir采访\YYYYMMDD-HHMMSS\`。浮窗和引导/设置窗口建立 HWND 后调用 WDA_EXCLUDEFROMCAPTURE；旧 Windows 或调用失败会提示，不能保证会议软件采用的捕获方式一定遵循此 API。
+
+当前自检画面使用设备页预览留帧，已在界面明确标注，**不是 M1 3 秒试录的解码截图**（M1 preflight 不导出帧且清理临时成片）。音量显示当前音频包峰值；300 ms 未收到新包显示静音，避免历史峰值卡住音量条。实际摄像头/麦克风、会议共享排除、合盖/息屏与多屏 DPI 仍需对应硬件验收。

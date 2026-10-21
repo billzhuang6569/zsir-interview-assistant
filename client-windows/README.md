@@ -60,4 +60,28 @@ powershell -ExecutionPolicy Bypass -File scripts/smoke.ps1 -Recorder C:\zsir\iss
 
 脚本验证设备/无摄像头诊断、ffprobe 时长和 codec、完整音视频解码、播放测试音时的非静音音频。CPU 统计包含 Recorder + 直属 ffmpeg 子进程，除以逻辑核数；脚本保留全部输出和统计 result.json。
 
-边界：尚无 UI/网络/上传/安装包/serve；没有摄像头 DirectShow 回退。录制中显示器/摄像头尺寸变化会报错停止（不自动重建格式），音频设备切换也需停止重启；这些恢复行为留给后续稳定性阶段。Windows 1903/1909 无窗口排除能力，Win10 与其他 GPU 的兼容性需分别真机验收。
+M1 CLI 边界：无网络/上传/安装包/serve（本地 App 见下文）；没有摄像头 DirectShow 回退。录制中显示器/摄像头尺寸变化会报错停止（不自动重建格式），音频设备切换也需停止重启；这些恢复行为留给后续稳定性阶段。Windows 1903/1909 无窗口排除能力，Win10 与其他 GPU 的兼容性需分别真机验收。
+
+## M2 本地 App（issue #15）
+
+在 `client-windows` 执行 `dotnet build -c Release`，启动 `App/bin/Release/net8.0-windows10.0.19041.0/App.exe`。Recorder 与 ffmpeg 自动复制至相邻位置。单文件发布：
+
+```powershell
+$env:HTTPS_PROXY = 'http://127.0.0.1:7897'
+powershell -ExecutionPolicy Bypass -File scripts/publish-app.ps1
+```
+
+引导 → 设备预览 → 自检 → 直接本地使用。无摄像头的测试机选择「仅屏幕」，自检仍展示 CAM_NOT_FOUND，屏幕通过后可进入浮窗。设置/预览期间不能启动正式录制；录制中不能更改设备。停止须点两次。退出使用托盘菜单，录制中需先停止。
+
+新增 `capture --stdin-control`：一行 `stop` 优雅停止；EOF 继续 60 秒后安全收尾。stdout/stderr 断管不影响采集。重开 App 可识别旧 Recorder 并提示等待自动保存；本阶段没有 stdin 重连控制。CLI 不带该参数时保持原行为。
+
+交互桌面自测脚本（需先构建，勿与人工录制同时执行）：
+
+```powershell
+# 经 /RU administrator /IT 计划任务调用。会修改本机测试配置，旧配置备份在输出目录。
+powershell -ExecutionPolicy Bypass -File scripts/app-smoke.ps1
+# 上一步通过、配置已完成引导后：
+powershell -ExecutionPolicy Bypass -File scripts/app-smoke.ps1 -Lifecycle
+```
+
+脚本用 UI Automation 操作真实窗口，保存控件文字、System.Drawing 桌面截图、完整解码结果；WDA 开启时桌面截图应不包含 App 窗口。单窗口 PrintWindow 在该机上也被 WDA 遮黑，不能替代人工视觉验收。所有临时计划任务须测试后删除。
