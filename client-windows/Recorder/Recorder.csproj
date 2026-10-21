@@ -2,10 +2,15 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <SupportedOSPlatformVersion>10.0.18362.0</SupportedOSPlatformVersion>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>zsir-recorder</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Shared/Shared.csproj" />
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
+    <Content Include="ffmpeg/**/*" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
   </ItemGroup>
 </Project>
