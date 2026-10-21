@@ -36,13 +36,13 @@
 
 | 组件 | 选型 | 理由 |
 |---|---|---|
-| macOS 客户端 | Swift 5.9 / SwiftUI + AppKit（浮窗）；录制进程纯 Swift CLI | 系统音频捕获只有 ScreenCaptureKit 不需要虚拟声卡；VideoToolbox 硬编；AVAssetWriter 原生支持分段写入 |
+| macOS 客户端 | Swift 5.9+ / **SwiftPM 工程**（本机无 Xcode.app）；AppKit + SwiftUI 浮窗；录制进程纯 Swift CLI；.app 由脚本组装 | 系统音频捕获只有 ScreenCaptureKit 不需要虚拟声卡；VideoToolbox 硬编；AVAssetWriter 原生支持分段写入 |
 | Windows 客户端 | C# / .NET 8 / WPF；录制进程 C# CLI + 内置 ffmpeg（LGPL 构建） | Windows.Graphics.Capture + WASAPI Loopback 是唯一不装驱动就能拿系统声音的组合；编码与封装交给 ffmpeg，一次覆盖 NVENC / QSV / AMF / Media Foundation 四种硬编 |
 | Relay 服务 | Node.js 20 + TypeScript + `ws` + Fastify；SQLite 持久化房间；Docker 部署 | 流量极小，单进程足够；与控制端共享类型定义 |
 | 控制端 | React 18 + Vite + TypeScript，静态文件由 Relay 服务托管 | 无登录、无路由复杂度；一个 SPA |
 | 对象存储 | 任意 S3 兼容（阿里 OSS / 腾讯 COS / Cloudflare R2） | 服务端只签发预签名 multipart URL，大文件不经过 VPS |
 | 协议 | WebSocket + JSON，HTTP 上传二进制 | 见 03 文档，JSON Schema 放在 `protocol/` |
-| CI | GitHub Actions：`macos-14` 构建 Swift，`windows-2022` 构建 .NET，`ubuntu` 构建 server/control | Claude 在 Linux 容器中开发，原生端的编译与打包全部在 CI 上完成；签名用仓库 Secrets |
+| CI | GitHub Actions：`macos-14` 构建 Swift，`windows-2022` 构建 .NET，`ubuntu` 构建 server/control | 日常构建与验收在真机（本机 Mac、SSH Windows 机）；CI 做回归与产物发布；签名用仓库 Secrets。协作方式见 08 |
 
 ### 为什么不是 Electron / 纯 ffmpeg / libobs
 
