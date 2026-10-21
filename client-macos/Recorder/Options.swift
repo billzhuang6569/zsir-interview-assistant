@@ -14,6 +14,7 @@ struct Options {
     var display: String?
     var duration: Double?
     var quality = "recommended"
+    var stdinControl = false
 
     init(_ args: [String]) throws {
         guard let command = args.first, ["devices", "preflight", "capture"].contains(command) else {
@@ -25,6 +26,7 @@ struct Options {
         while i < args.count {
             let key = args[i]
             guard seen.insert(key).inserted else { throw RecorderError("ARGUMENT: 重复参数 \(key)") }
+            if key == "--stdin-control", command == "capture" { stdinControl = true; i += 1; continue }
             if key == "--json", command != "capture" { i += 1; continue }
             let allowed = command == "devices" ? [] : command == "preflight" ? ["--camera", "--mic", "--display"] : ["--camera", "--mic", "--display", "--out", "--tracks", "--duration", "--quality"]
             guard allowed.contains(key), i + 1 < args.count else { throw RecorderError("ARGUMENT: 未知参数或缺少值 \(key)") }
@@ -62,6 +64,16 @@ func jsonData(_ value: Any) throws -> Data { try JSONSerialization.data(withJSON
 func emit(_ value: Any) {
     do {
         let data = try JSONSerialization.data(withJSONObject: value, options: [.sortedKeys])
-        FileHandle.standardOutput.write(data + Data([10]))
+        // A dead UI closes stdout; EPIPE must never terminate the recording.
+        let line = data + Data([10])
+        line.withUnsafeBytes { bytes in
+            var offset = 0
+            while offset < bytes.count {
+                let count = Darwin.write(STDOUT_FILENO, bytes.baseAddress!.advanced(by: offset), bytes.count - offset)
+                if count < 0, errno == EINTR { continue }
+                if count <= 0 { break }
+                offset += count
+            }
+        }
     } catch { FileHandle.standardError.write(Data("JSON: \(error)\n".utf8)) }
 }
