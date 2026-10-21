@@ -4,7 +4,7 @@ ARG APT_MIRROR=
 ARG NPM_REGISTRY=
 WORKDIR /app
 RUN if [ -n "$APT_MIRROR" ]; then sed -i "s/deb.debian.org/$APT_MIRROR/g" /etc/apt/sources.list.d/debian.sources; fi \
- && if [ -n "$NPM_REGISTRY" ]; then npm config set registry "$NPM_REGISTRY" && npm config set better_sqlite3_binary_host "https://registry.npmmirror.com/-/binary/better-sqlite3"; fi
+ && if [ -n "$NPM_REGISTRY" ]; then printf "registry=%s\nbetter_sqlite3_binary_host=https://registry.npmmirror.com/-/binary/better-sqlite3\n" "$NPM_REGISTRY" > /root/.npmrc; fi
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
 COPY server/package*.json server/
 RUN cd server && npm ci
