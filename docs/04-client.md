@@ -68,9 +68,9 @@ recording ──stop──► stopping(finalize) ──► postprocess(宫格图
 
 ### 2.1 工程
 
-- Xcode 15+，Swift 5.9，部署目标 macOS 13.0。
+- SwiftPM + Command Line Tools，Swift tools 5.9，部署目标 macOS 13.0；无需 Xcode.app。
 - Swift Package：`App`（SwiftUI + AppKit）、`Recorder`（可执行 target）、`Shared`。
-- Recorder 作为 App bundle 内的 helper 可执行文件（`Contents/MacOS/zsir-recorder`），与 App 共享签名与 TCC 身份（**必须**在同一 bundle 内，否则屏幕录制权限要分别授权）。
+- Recorder 作为 App bundle 内的 helper 可执行文件（`Contents/MacOS/recorder`），与 App 共享签名与 TCC 身份（**必须**在同一 bundle 内，否则屏幕录制权限要分别授权）。
 
 ### 2.2 关键实现点
 
@@ -164,7 +164,19 @@ ScreenCaptureKit 排除 recorder 与父进程链中宿主应用的所有窗口�
 
 Windows CLI 必须运行在交互桌面，OpenSSH Session 0 直接捕获会报 `INTERACTIVE_SESSION_REQUIRED`；远程验收用 `/IT` 计划任务。窗口排除测试只检查隐藏窗口上的 API 返回值，视觉效果需后续独立验收。LGPL 编码兜底明确使用 `h264_mf -hw_encoding 0` 并报告 `ENCODER_FALLBACK`；不使用 x264。M1 不包含设备热插拔恢复、DirectShow 回退或显示器尺寸变化后的自动重建。
 
-### 4.2 Windows 本地 App（issue #15）
+### 4.2 M2 macOS 本地 App（issue #14）
+
+当前 macOS App 已采用 **SwiftPM + AppKit NSPanel + SwiftUI**，不使用 Xcode 工程；构建入口 `client-macos/scripts/make-app.sh`，产物 `.build/庄Sir线上采访助手.app`，ad-hoc 签名。上述 §2.3 的 Xcode archive、Developer ID、公证/安装包仍属于后续分发规划。
+
+本地流程：欢迎 → App 自己请求 TCC 权限 → 设备预览 → 原始 M1 preflight（两路、推荐档、3 秒）→ 邀请码/欢迎卡 M4 占位 → 本地浮窗。设备页/设置页明确提示临时采集，离开即关闭；自检页显示设备页最后缩略图并注明来源，数值/错误直接来自 recorder，不扩展 preflight 输出。另对用户选定输出目录做写入验证。
+
+App 作为 recorder 直接父进程，执行 `devices` / `preflight` / `capture`，流式解析 stdout JSON lines。capture 新增可选 `--stdin-control`，一行 `stop` 请求 finalize；stdin EOF 后继续 60 秒再 finalize，断开 stdout 不终止 recorder。无该参数时保留 M1 CLI 行为。此次没有 serve 或重新附着：重开 App 读取持久化会话路径/PID及 session.json，只提示旧录制状态并等待收尾，不接管、不自动重录。该行为是 §1.2 “重新附着”之前的本地实现。
+
+浮窗提供就绪/3 秒倒计时/录制与保存中/警告或错误，非零退出为 `RECORDER_CRASHED`。停止二次确认，进程结束后显示可打开的保存目录。默认 `~/Movies/庄Sir采访/<YYYYMMDD-HHMMSS>/`，同名目录拒绝覆盖。持久化设备、画质、范围、输出目录、浮窗坐标；UI 无 Dock 图标，菜单栏提供状态与入口。
+
+自身窗口排除继续依赖 recorder 的父进程链；App 的浮窗、引导和设置窗口另设 `sharingType = .none`。第三方会议共享能否隐藏，以及 recorder 的防空闲睡眠断言在息屏/合盖中的实际效果，必须在对应系统/会议软件上验收，不能据此声明通过。当前实现、命令与测试边界见 [macOS README](../client-macos/README.md#m2-本地-appissue-14)。
+
+### 4.3 M2 Windows 本地 App（issue #15）
 
 `client-windows/App` 是独立 WPF 进程，深色引导与置顶浮窗，使用系统 NotifyIcon 托盘。普通构建自动将 Recorder 输出（包括 `ffmpeg/`）复制到 App 输出目录；自包含单文件发布使用 `client-windows/scripts/publish-app.ps1`，产物是 App.exe 与旁边的 zsir-recorder.exe、ffmpeg/，不制作安装包。
 

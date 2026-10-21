@@ -38,6 +38,7 @@ func permissions(_ tracks: Set<String>) async -> [String] {
 func main() async -> Int32 {
     var preflight = false
     var engine: CaptureEngine?
+    var control: StdinControl?
     var temporary: URL?
     defer { if let temporary { try? FileManager.default.removeItem(at: temporary) } }
     do {
@@ -64,6 +65,11 @@ func main() async -> Int32 {
         guard let directory = options.out else { throw RecorderError("ARGUMENT: 缺少输出目录") }
         let capture = CaptureEngine(options: options, directory: directory)
         engine = capture
+        if options.stdinControl {
+            control = StdinControl { capture.queue.async { capture.stopRequested = true } }
+            control?.start()
+        }
+        defer { withExtendedLifetime(control) {} }
         try await capture.configure()
         try await capture.run(report: !preflight)
         if preflight {
@@ -88,5 +94,6 @@ func main() async -> Int32 {
         return 1
     }
 }
+signal(SIGPIPE, SIG_IGN)
 Task { exit(await main()) }
 dispatchMain()

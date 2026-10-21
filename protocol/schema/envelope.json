@@ -9,8 +9,8 @@
     "id": { "type": "string", "description": "ULID" },
     "ts": { "type": "integer", "description": "发送方毫秒时间戳" },
     "from": { "enum": ["client", "control", "server"] },
-    "operator": { "type": "string", "description": "服务器注入：触发指令的控制端昵称" },
-    "clientId": { "type": "string", "description": "服务器转发给控制端时注入" },
+    "operator": { "type": "string", "description": "控制端提交昵称，服务器校验并规范化后注入转发信封" },
+    "clientId": { "type": "string", "description": "控制端指定目标客户端 UUID；服务器转发给控制端时注入" },
     "payload": { "type": "object" }
   },
   "additionalProperties": false

@@ -128,3 +128,16 @@
 - Recorder → UI：`state`（每秒）/ `recording_started` / `recording_stopped` / `event` / `preflight_result` / `snapshot_result{track, path}`
 
 录制进程启动参数：`zsir-recorder serve --output <dir> --quality recommended --cam <id> --mic <id> --display <id> --exclude-window <id>`。UI 进程退出不会关闭录制进程的 stdin 之外的任何东西；录制进程检测到 stdin EOF 时**不退出**，而是继续录制直到：磁盘临界、或看门狗发现 UI 进程超过 60 秒未重连（通过本地 Unix socket / 命名管道重新附着）才 finalize 并退出。
+
+## 10. M2 Relay / 控制端联调约定（issue #8）
+
+- 当前实现 HTTP rooms / archive / join / healthz 与 WS hello / state / countdown / recording_started / recording_stopped / event / ack / start / stop。静帧、上传、下载页和结束任务尚未实现。
+- 控制指令的目标为信封顶层 `clientId`（客户端持久化 UUID），昵称为顶层 `operator`（1–80 字符）。服务端校验目标属于当前控制连接的房间，将规范化后的昵称注入转发信封，并记录日志；不会信任消息里声明的其它房间。当前无登录，因此昵称仅用于记录，不是身份认证。
+- `start.payload.countdownSec` 必须为 `3`；只接受 `ready` 且在线的嘉宾。`stop` 可随时发送（包括取消倒计时）。客户端应按指令 `id` 幂等处理。
+- `ack` 的 `refId` 对应原指令 ID，服务端转发时带顶层 `clientId`，所有当前房间控制端均收到。5 秒未确认返回 `ACK_TIMEOUT`。离线 stop 立即返回 `{refId,ok:true,queued:true}`，表示已保存，**不代表已经停录**。
+- 离线 stop 存 SQLite `clients.pending_command`，每个客户端仅保留最新一条。hello 后或同一连接恢复 state 时补发；成功 ack 后清除。进程重启仍保留。失败/未确认可能再次补发，客户端须幂等。离线 start 立即返回 `CLIENT_OFFLINE`，不排队。
+- `room` 快照补充 `room.defaultTracks`、`room.archivedAt`、`clients[].countdown`（数字或 null）、`lastSeen`；`lastFrames` 当前为空对象。录制记录含 `recordingId/clientId/startedAt/stoppedAt/tracks/files`。日志含 `id/ts/clientId/actor/level/code/text/detail`，最多最近 200 条。
+- 首次有效 state 才算在线；30 秒无 state 标离线（即使仍响应 pong）。断开立即离线。状态向控制端最多广播 1 次/秒，重连快照不受节流限制。
+- `/api/rooms` 返回房间数组，包含已过期/归档房间；POST 返回 201。过期/归档房间只读，控制指令返回 `ROOM_INACTIVE`，不主动中断本地录制。
+- join 与客户端 WS 握手共用同 IP 失败计数；第五次失败起锁定 10 分钟，锁定期间正确码也拒绝。响应统一 403 `INVALID_CODE`。当前单进程内存计数，重启清零；不信任外部 `X-Forwarded-For`。服务器直接暴露端口时使用真实 socket IP；以后增加反向代理时需显式配置可信代理范围。
+- 未知消息类型忽略；已知消息参数或信封无效以 1008 关闭客户端 WS；已知控制指令参数无效返回 `INVALID_COMMAND`。文本帧上限 64 KiB。
