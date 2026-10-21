@@ -8,3 +8,5 @@
 | [004](004-self-hosted-relay.md) | 自建 Relay 中转 + S3 兼容对象存储直传 | 已采纳 |
 | [005](005-process-separation.md) | UI 进程与录制进程分离 | 已采纳 |
 | [006](006-no-control-auth.md) | 控制端当前版本不设登录 | 已采纳（限内部） |
+| [007](007-room-and-invite-code.md) | 房间 + 邀请码：固定下载地址，码在引导最后一步输入 | 已采纳 |
+| [007](007-room-and-invite-code.md) | 房间 + 邀请码：固定下载地址，码在引导最后一步输入 | 已采纳 |

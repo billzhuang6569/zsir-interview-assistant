@@ -38,7 +38,7 @@
 |---|---|---|
 | macOS 客户端 | Swift 5.9 / SwiftUI + AppKit（浮窗）；录制进程纯 Swift CLI | 系统音频捕获只有 ScreenCaptureKit 不需要虚拟声卡；VideoToolbox 硬编；AVAssetWriter 原生支持分段写入 |
 | Windows 客户端 | C# / .NET 8 / WPF；录制进程 C# CLI + 内置 ffmpeg（LGPL 构建） | Windows.Graphics.Capture + WASAPI Loopback 是唯一不装驱动就能拿系统声音的组合；编码与封装交给 ffmpeg，一次覆盖 NVENC / QSV / AMF / Media Foundation 四种硬编 |
-| Relay 服务 | Node.js 20 + TypeScript + `ws` + Fastify；SQLite 持久化会话；Docker 部署 | 流量极小，单进程足够；与控制端共享类型定义 |
+| Relay 服务 | Node.js 20 + TypeScript + `ws` + Fastify；SQLite 持久化房间；Docker 部署 | 流量极小，单进程足够；与控制端共享类型定义 |
 | 控制端 | React 18 + Vite + TypeScript，静态文件由 Relay 服务托管 | 无登录、无路由复杂度；一个 SPA |
 | 对象存储 | 任意 S3 兼容（阿里 OSS / 腾讯 COS / Cloudflare R2） | 服务端只签发预签名 multipart URL，大文件不经过 VPS |
 | 协议 | WebSocket + JSON，HTTP 上传二进制 | 见 03 文档，JSON Schema 放在 `protocol/` |
@@ -62,7 +62,7 @@
 | 屏幕画面 | `SCStream` + `SCContentFilter(display:excludingWindows:[自身浮窗])` | 自身窗口从捕获源头排除；`minimumFrameInterval` 设 1/30 或 1/15；`queueDepth` 5 |
 | 系统声音 | 同一 `SCStream`，`SCStreamConfiguration.capturesAudio = true`，`excludesCurrentProcessAudio = true` | macOS 13+ 原生，不含话筒；48 kHz 2ch |
 | 摄像头 | `AVCaptureSession` + `AVCaptureVideoDataOutput` | 选设备支持的最高 ≤1080p30 格式；允许 4K 选项 |
-| 话筒 | `AVCaptureAudioDataOutput` | 与摄像头同一 session，保证 PTS 同源 |
+| 话筒 | `AVCaptureAudioDataOutput` | 与摄像头同一 room，保证 PTS 同源 |
 | 编码 | `AVAssetWriter` + `AVAssetWriterInput`（`AVVideoCodecType.h264`，`expectsMediaDataInRealTime = true`） | 走 VideoToolbox 硬编；Profile High，`AVVideoAverageBitRateKey` 按档位 |
 | 容器 | `.mov`（QuickTime），`movieFragmentInterval = 2 s` | 每 2 秒落一个完整 fragment，崩溃最多丢 2 秒；停止时正常 finalize |
 | 防睡眠 | `IOPMAssertionCreateWithName(kIOPMAssertPreventUserIdleSystemSleep)` | 录制期间持有 |
@@ -85,7 +85,7 @@
 ### 3.3 两路对齐
 
 - 录制进程收到 `start` 后取一次单调时钟 `T0` 与墙钟 `W0`，两路编码器同时开启；每路第一帧的 PTS 相对 `T0` 的偏移写入 `session.json`。
-- 两路各自内部音画同步靠同源 PTS（macOS：同一 capture session；Windows：所有样本统一打上 `Stopwatch` 时间戳再喂 ffmpeg，`-use_wallclock_as_timestamps 1`）。
+- 两路各自内部音画同步靠同源 PTS（macOS：同一 capture room；Windows：所有样本统一打上 `Stopwatch` 时间戳再喂 ffmpeg，`-use_wallclock_as_timestamps 1`）。
 - 可选「对齐哔声」：开始时在话筒轨和系统声轨各插一段 1 kHz 100 ms 的正弦（系统声轨通过本机播放一声实现，话筒自然录到），后期可用波形对齐做保险。
 
 ### 3.4 自检（Preflight）
@@ -138,10 +138,10 @@ protocol/
 server/
   src/ws/                  连接管理、房间、广播
   src/http/                静帧上传、上传凭证、下载链接
-  src/store/               SQLite：会话、客户端、事件日志
+  src/store/               SQLite：房间、客户端、事件日志
   src/storage/             S3 兼容客户端封装
 control/
-  src/pages/Session.tsx    主页面
+  src/pages/Room.tsx    主页面
   src/components/ClientCard.tsx
   src/components/ContactSheetDialog.tsx
   src/ws.ts                客户端连接与状态同步

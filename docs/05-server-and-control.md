@@ -13,10 +13,10 @@ server/
   src/
     index.ts            启动：Fastify + ws 升级
     config.ts           环境变量读取与校验
-    ws/hub.ts           连接注册表：session → {clients, controls}
+    ws/hub.ts           连接注册表：room → {clients, controls}
     ws/clientHandler.ts 客户端消息处理（hello/state/event/ack…）
     ws/controlHandler.ts控制端消息处理（指令转发 + 日志）
-    http/sessions.ts    会话 CRUD
+    http/rooms.ts    房间 CRUD
     http/frames.ts      静帧上传（内存）/ 读取
     http/sheets.ts      宫格图上传（磁盘）
     http/upload.ts      multipart 预签名 init/complete + 校验
@@ -31,14 +31,14 @@ server/
 ### 1.3 数据模型（SQLite）
 
 ```sql
-sessions   (id TEXT PK, name, code TEXT UNIQUE, created_at, expires_at)
+rooms   (id TEXT PK, name, code TEXT UNIQUE, director, welcome, guests_json, default_tracks, created_at, expires_at, archived_at NULL)
 clients    (id TEXT PK, session_id, name, os_json, app_version, first_seen, last_seen)
 recordings (id TEXT PK, session_id, client_id, started_at, stopped_at, tracks_json)
 files      (id PK, recording_id, track, bytes, duration_ms, sha256, object_key, upload_state, uploaded_at)
 events     (id PK, session_id, client_id NULL, ts, actor, level, code, text, detail_json)
 ```
 
-静帧只在内存（`Map<sessionId/clientId/track, {buf, ts}>`），进程重启即空。
+静帧只在内存（`Map<roomId/clientId/track, {buf, ts}>`），进程重启即空。
 
 ### 1.4 转发语义（必须有测试覆盖）
 
@@ -62,7 +62,7 @@ events     (id PK, session_id, client_id NULL, ts, actor, level, code, text, det
 ### 1.6 部署
 
 - 单台 VPS，`docker compose up -d`：`relay` + `caddy`（反代 + 自动证书）。
-- 资源：1 vCPU / 1 GB 足够 10 个并发会话。
+- 资源：1 vCPU / 1 GB 足够 10 个并发房间。
 - 备份：每日 `sqlite3 .backup` 到对象存储。
 - 对象存储生命周期：成品 30 天后转低频/归档（可配置），宫格图 7 天删除。
 
@@ -77,12 +77,12 @@ React 18 · Vite · TypeScript · Zustand（状态）· 无 UI 框架（自写 C
 ```
 src/
   main.tsx
-  App.tsx               顶栏 + 左栏会话列表 + 主区
+  App.tsx               顶栏 + 左栏房间列表 + 主区
   ws.ts                 WebSocket 连接、重连、消息分发到 store
-  store.ts              session / clients / log / 本人昵称
-  pages/SessionPage.tsx
+  store.ts              room / clients / log / 本人昵称
+  pages/RoomPage.tsx
   components/
-    SessionHeader.tsx   名称、会话码（大字+复制）、下载链接（复制）
+    RoomHeader.tsx   名称、导演、邀请码（大字+复制）、「复制邀请文案」
     ClientCard.tsx      状态、两路静帧、指标、按钮组
     FramePair.tsx       两路静帧 + 「x 秒前」时效颜色
     TrackMeter.tsx      分辨率/帧率/码率/电平
@@ -91,7 +91,7 @@ src/
     FilesDialog.tsx     文件、上传进度、下载、SHA、复制手动拷贝文案
     ConfirmDialog.tsx   停止 / 结束任务 二次确认
     EventLog.tsx
-    NewSessionDialog.tsx
+    NewRoomDialog.tsx   房间名 / 导演 / 嘉宾姓名(多) / 欢迎语 / 默认录制范围
 ```
 
 ### 2.3 交互规则
@@ -107,11 +107,11 @@ src/
 
 `vite build` 输出到 `server/public/`，由 Relay 托管；CI 在 `ubuntu` 上构建并与 server 一起打 Docker 镜像。
 
-## 3. 下载页（`/download/<code>`）
+## 3. 下载页（`/download`，固定地址）
 
-Relay 直接渲染的极简静态页：
+Relay 直接渲染的极简静态页，**不带任何房间参数**，所有嘉宾用同一个地址：
 
 - 自动识别 macOS / Windows，大按钮下载对应安装包；另一平台小链接。
-- 显示会话码（安装后自动填入：macOS 通过 `zsir://join?code=` URL scheme，Windows 通过安装包文件名携带 `-code-XXXXXX` 让安装器写入配置）。
-- 三步图示：安装 → 允许权限 → 等待导演。
+- 三步图示：安装 → 允许权限并检查画面 → 输入导演给的邀请码。
+- 不做「链接自动带码」（URL scheme / 安装包改名那套）：多一条链路就多一个现场翻车点，6 位数字嘉宾手输 5 秒钟的事。
 - 隐私承诺三条（见 06 文档 §2）。

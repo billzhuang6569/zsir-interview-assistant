@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>控制端 · 会话页</title>
+<title>控制端 · 房间页</title>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -36,13 +36,13 @@ input[type=radio]{accent-color:#e5484d;width:16px;height:16px;margin:0}
       <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#3ecf8e"></span>
       <span>已连接服务器</span>
     </div>
-    <button type="button" style="height:36px;padding:0 14px;border-radius:8px;border:1px solid #3a3d45;background:#23252b;color:#e8e9ec;font-size:13px;font-weight:500">+ 新建会话</button>
+    <button type="button" style="height:36px;padding:0 14px;border-radius:8px;border:1px solid #3a3d45;background:#23252b;color:#e8e9ec;font-size:13px;font-weight:500">+ 新建房间</button>
   </header>
 
   <div style="display:flex;flex-wrap:wrap;flex:1">
 
-    <!-- 左栏 会话列表 -->
-    <nav aria-label="会话列表" style="flex:0 1 240px;min-width:200px;border-right:1px solid #2c2f36;background:#17181c;padding:16px 12px;display:flex;flex-direction:column;gap:6px">
+    <!-- 左栏 房间列表 -->
+    <nav aria-label="房间列表" style="flex:0 1 240px;min-width:200px;border-right:1px solid #2c2f36;background:#17181c;padding:16px 12px;display:flex;flex-direction:column;gap:6px">
       <div style="font-size:12px;color:#9a9fa8;padding:4px 10px;letter-spacing:.04em">今天</div>
       <a href="#" aria-current="page" style="display:flex;flex-direction:column;gap:2px;padding:10px 12px;border-radius:8px;background:#26282f;color:#e8e9ec;text-decoration:none">
         <span style="font-weight:500">2026-10-28 王老师</span>
@@ -62,19 +62,19 @@ input[type=radio]{accent-color:#e5484d;width:16px;height:16px;margin:0}
     <!-- 主区 -->
     <main style="flex:999 1 560px;min-width:0;padding:24px;display:flex;flex-direction:column;gap:20px">
 
-      <!-- 会话头 -->
+      <!-- 房间头 -->
       <section style="display:flex;align-items:center;gap:24px;flex-wrap:wrap;padding:18px 22px;border:1px solid #2c2f36;border-radius:12px;background:#1d1f24">
         <div style="display:flex;flex-direction:column;gap:4px;min-width:200px">
           <h1 style="margin:0;font-size:20px;font-weight:700">2026-10-28 王老师</h1>
-          <span style="font-size:12px;color:#9a9fa8">创建于 10-27 16:20 · 会话码 7 天内有效</span>
+          <span style="font-size:12px;color:#9a9fa8">创建于 10-27 16:20 · 邀请码 7 天内有效</span>
         </div>
         <div style="display:flex;align-items:center;gap:12px;padding:8px 14px;border:1px dashed #3a3d45;border-radius:10px">
-          <span style="font-size:12px;color:#9a9fa8">会话码</span>
+          <span style="font-size:12px;color:#9a9fa8">邀请码</span>
           <span style="font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;letter-spacing:.18em;color:#ffffff">483 920</span>
           <button type="button" style="height:32px;padding:0 12px;border-radius:6px;border:1px solid #3a3d45;background:#23252b;color:#e8e9ec;font-size:12px">复制</button>
         </div>
         <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:#c9ccd2">
-          <span style="color:#9a9fa8">嘉宾下载链接</span>
+          <span style="color:#9a9fa8">复制邀请文案（下载地址 + 邀请码）</span>
           <span style="font-family:'JetBrains Mono',monospace;font-size:12px;padding:6px 10px;border-radius:6px;background:#17181c;border:1px solid #2c2f36">zsir.app/d/483920</span>
           <button type="button" style="height:32px;padding:0 12px;border-radius:6px;border:1px solid #3a3d45;background:#23252b;color:#e8e9ec;font-size:12px">复制</button>
         </div>
