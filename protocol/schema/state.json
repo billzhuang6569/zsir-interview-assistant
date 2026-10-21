@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "zsir://protocol/state",
+  "title": "ClientState",
+  "type": "object",
+  "required": ["status", "tracks", "disk", "warnings"],
+  "properties": {
+    "status": { "enum": ["idle", "preflight", "ready", "countdown", "recording", "stopping", "postprocess", "uploading", "error"] },
+    "recordingId": { "type": "string" },
+    "elapsedMs": { "type": "integer", "minimum": 0 },
+    "tracks": {
+      "type": "object",
+      "required": ["cam", "screen"],
+      "properties": {
+        "cam": { "$ref": "#/$defs/track" },
+        "screen": { "$ref": "#/$defs/track" }
+      }
+    },
+    "disk": {
+      "type": "object",
+      "required": ["freeBytes"],
+      "properties": {
+        "freeBytes": { "type": "integer" },
+        "estimatedMinutesLeft": { "type": "integer" }
+      }
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  },
+  "$defs": {
+    "track": {
+      "type": "object",
+      "required": ["enabled", "ok"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "ok": { "type": "boolean" },
+        "width": { "type": "integer" },
+        "height": { "type": "integer" },
+        "fps": { "type": "number" },
+        "bitrateKbps": { "type": "integer" },
+        "bytes": { "type": "integer" },
+        "level": { "type": "number", "description": "音频峰值 dBFS" },
+        "encoder": { "type": "string" }
+      }
+    }
+  }
+}

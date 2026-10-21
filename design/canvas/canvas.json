@@ -1,0 +1,19 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-10-21T12:00:00Z" },
+  "title": "庄Sir线上采访助手 UI",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 1440, "h": 1040, "title": "控制端 · 会话页（导演）", "expand": "fill", "is_interactive": true },
+    "Float.dc.html": { "x": 0, "y": 1160, "w": 760, "h": 520, "title": "客户端 · 角落浮窗 4 种状态" },
+    "Onboarding.dc.html": { "x": 840, "y": 1160, "w": 880, "h": 620, "title": "客户端 · 首次启动 · 自检" },
+    "Sheet.dc.html": { "x": 1800, "y": 1160, "w": 1100, "h": 760, "title": "控制端 · 宫格图检查弹层" }
+  },
+  "order": ["Main.dc.html", "Float.dc.html", "Onboarding.dc.html", "Sheet.dc.html"],
+  "notes": {
+    "t1": { "x": 0, "y": -300, "text": "导演端（网页）", "kind": "title1", "maxW": 1440 },
+    "t2": { "x": 0, "y": 860, "text": "嘉宾端（Mac / Windows 客户端）与检查弹层", "kind": "title1", "maxW": 2900 }
+  },
+  "designSystems": []
+}

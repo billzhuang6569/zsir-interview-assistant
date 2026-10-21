@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "zsir://protocol/commands",
+  "title": "ControlCommands",
+  "oneOf": [
+    { "$ref": "#/$defs/snapshot" }, { "$ref": "#/$defs/start" }, { "$ref": "#/$defs/stop" },
+    { "$ref": "#/$defs/set_quality" }, { "$ref": "#/$defs/make_contact_sheet" },
+    { "$ref": "#/$defs/upload_control" }, { "$ref": "#/$defs/finish_task" }
+  ],
+  "$defs": {
+    "snapshot": { "type": "object", "properties": { "type": { "const": "snapshot" }, "payload": { "type": "object", "additionalProperties": false } }, "required": ["type", "payload"] },
+    "start": {
+      "type": "object", "required": ["type", "payload"],
+      "properties": {
+        "type": { "const": "start" },
+        "payload": {
+          "type": "object", "required": ["tracks", "countdownSec"],
+          "properties": {
+            "tracks": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["cam", "screen"] } },
+            "countdownSec": { "type": "integer", "minimum": 0, "maximum": 10, "default": 3 }
+          }
+        }
+      }
+    },
+    "stop": { "type": "object", "properties": { "type": { "const": "stop" }, "payload": { "type": "object" } }, "required": ["type", "payload"] },
+    "set_quality": {
+      "type": "object", "required": ["type", "payload"],
+      "properties": { "type": { "const": "set_quality" }, "payload": { "type": "object", "required": ["preset"], "properties": { "preset": { "enum": ["economy", "recommended", "high"] } } } }
+    },
+    "make_contact_sheet": {
+      "type": "object", "required": ["type", "payload"],
+      "properties": { "type": { "const": "make_contact_sheet" }, "payload": { "type": "object", "required": ["recordingId"], "properties": { "recordingId": { "type": "string" } } } }
+    },
+    "upload_control": {
+      "type": "object", "required": ["type", "payload"],
+      "properties": { "type": { "const": "upload_control" }, "payload": { "type": "object", "required": ["action"], "properties": { "action": { "enum": ["pause", "resume", "retry"] } } } }
+    },
+    "finish_task": {
+      "type": "object", "required": ["type", "payload"],
+      "properties": { "type": { "const": "finish_task" }, "payload": { "type": "object", "properties": { "keepOutputDir": { "type": "boolean", "default": true } } } }
+    }
+  }
+}

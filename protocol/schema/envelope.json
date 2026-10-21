@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "zsir://protocol/envelope",
+  "title": "Envelope",
+  "type": "object",
+  "required": ["type", "id", "ts", "from", "payload"],
+  "properties": {
+    "type": { "type": "string" },
+    "id": { "type": "string", "description": "ULID" },
+    "ts": { "type": "integer", "description": "发送方毫秒时间戳" },
+    "from": { "enum": ["client", "control", "server"] },
+    "operator": { "type": "string", "description": "服务器注入：触发指令的控制端昵称" },
+    "clientId": { "type": "string", "description": "服务器转发给控制端时注入" },
+    "payload": { "type": "object" }
+  },
+  "additionalProperties": false
+}

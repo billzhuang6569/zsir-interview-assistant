@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "zsir://protocol/event",
+  "title": "ClientEvent",
+  "type": "object",
+  "required": ["level", "code", "message"],
+  "properties": {
+    "level": { "enum": ["info", "warn", "error"] },
+    "code": { "enum": ["DISK_LOW", "DISK_CRITICAL", "CAM_LOST", "MIC_LOST", "FRAME_DROP", "ENCODER_FALLBACK", "RECORDER_CRASHED", "PERMISSION_MISSING", "UPLOAD_FAILED", "SHEET_FAILED", "INFO"] },
+    "message": { "type": "string" },
+    "detail": { "type": "object" }
+  }
+}
