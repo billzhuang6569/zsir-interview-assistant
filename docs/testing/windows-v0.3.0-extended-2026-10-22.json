@@ -1,0 +1,43 @@
+{
+  "packageSHA256": "2bbefaa77d6f84a3d2db53feded84439e02b71348adc705fab66033fda7797f0",
+  "audioDiscontinuities": 0,
+  "state": "passed",
+  "plannedSeconds": 1800,
+  "audioMinusVideoSeconds": 0.040000000000000036,
+  "note": "User accepted about 9 minutes; normal save produced 634 seconds. Original 1800-second automation was interrupted intentionally, not passed.",
+  "userRequestedEarlyStop": true,
+  "endSynchronizationMarkerChecked": false,
+  "audioToneStartsSeconds": [
+    6.24
+  ],
+  "fullDecodePassed": true,
+  "media": {
+    "durationSeconds": 634.0,
+    "bytes": 15522896,
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 2560,
+        "height": 1440,
+        "duration": "634.000000",
+        "nb_frames": "19016",
+        "avg_frame_rate": "9508/317"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2,
+        "duration": "634.000000",
+        "nb_frames": "29720",
+        "avg_frame_rate": "0/0"
+      }
+    ]
+  },
+  "videoFlashStartsSeconds": [
+    6.2
+  ],
+  "actualSeconds": 634,
+  "recorderState": "finalized_unverified"
+}

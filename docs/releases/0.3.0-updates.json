@@ -3,7 +3,7 @@
   "releases": [
     {
       "version": "0.3.0",
-      "publishedAt": "2026-10-22T05:09:59.715519+00:00",
+      "publishedAt": "2026-10-22T05:17:12.724465+00:00",
       "summary": "Mac完整版自动检测更新；macOS13兼容及12.3独立兼容包；Windows内置录制组件，解压即用。",
       "releaseURL": "https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.3.0",
       "assets": [
@@ -13,8 +13,8 @@
           "edition": "standard",
           "minOS": "13.0",
           "url": "https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.3.0/ZSirCapture-0.3.0-macos-arm64.zip",
-          "size": 2411550,
-          "sha256": "8d8efe710a77bbeeec9071467dbb5e1f0ce40f70be4503e54439946dcc45344d"
+          "size": 2411624,
+          "sha256": "085acadda99b2c25c36210eaa0d8253a2a7ecfe58517349d73f7d2605df2a944"
         },
         {
           "os": "macos",
@@ -22,8 +22,8 @@
           "edition": "standard",
           "minOS": "13.0",
           "url": "https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.3.0/ZSirCapture-0.3.0-macos-x86_64.zip",
-          "size": 2438143,
-          "sha256": "3974ad8cb680251650633009d9cc9e5fc42580a79c8a3ec47b47850ce3b5f0ef"
+          "size": 2438217,
+          "sha256": "72522785f7f96edf7e2787eb04acfd23b1bf1eb9d1c6f06f798105612722107d"
         },
         {
           "os": "macos",
@@ -31,8 +31,8 @@
           "edition": "monterey",
           "minOS": "12.3",
           "url": "https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.3.0/ZSirCapture-0.3.0-macos12-arm64.zip",
-          "size": 2408039,
-          "sha256": "31b71d359bece82e3398ec6b3ecc9a2b4d362b73c26ed53c8a61c12b0f0ca943"
+          "size": 2408113,
+          "sha256": "017c97d48317ff6ad431b707438694b7cd1be269aab4ae7ef8124971a34f1bbb"
         },
         {
           "os": "macos",
@@ -40,8 +40,8 @@
           "edition": "monterey",
           "minOS": "12.3",
           "url": "https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.3.0/ZSirCapture-0.3.0-macos12-x86_64.zip",
-          "size": 2432689,
-          "sha256": "e2140cfeb9e3316f98e6095d4742bbc0679cde3bb1ffdbc706be2264b7e7c750"
+          "size": 2432763,
+          "sha256": "e85505a432e6db01be04b650fc20e158e6cf43f44b9526946f6d9122a1ce9e16"
         },
         {
           "os": "windows",
