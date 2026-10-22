@@ -46,7 +46,12 @@ public final class MovieWriter {
             height = dimensions.height
             let candidate = try AVAssetWriter(outputURL: url, fileType: .mp4)
             candidate.movieFragmentInterval = CMTime(seconds: 10, preferredTimescale: 600)
-            candidate.initialMovieFragmentInterval = CMTime(seconds: 1, preferredTimescale: 600)
+            if #available(macOS 14, *), !RecordingCapabilities.macOS12Edition {
+                candidate.initialMovieFragmentInterval = CMTime(seconds: 1, preferredTimescale: 600)
+            } else {
+                // macOS 13 cannot flush the first fragment separately; keep early recovery at the cost of more fragments.
+                candidate.movieFragmentInterval = CMTime(seconds: 1, preferredTimescale: 600)
+            }
             let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
                 AVVideoCodecKey: AVVideoCodecType.h264,
                 AVVideoWidthKey: Int(width), AVVideoHeightKey: Int(height),

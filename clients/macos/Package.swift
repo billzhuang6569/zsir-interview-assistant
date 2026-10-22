@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "ZSirCapture",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS("12.3")],
     products: [.executable(name: "ZSirCapture", targets: ["ZSirCapture"])],
     targets: [
         .target(name: "RecordingCore"),

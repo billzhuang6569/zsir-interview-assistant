@@ -16,7 +16,25 @@ internal static class SmokeTest
         TestScene? scene = null;
         try
         {
+            int duration = int.TryParse(Environment.GetEnvironmentVariable("ZSIR_SMOKE_SECONDS"), out int requested) ? Math.Clamp(requested, 18, 3600) : 18;
+            int spacing = duration == 18 ? 5 : (duration - 8) / 2;
+            var analysisTimeout = TimeSpan.FromSeconds(Math.Max(60, duration / 2));
+            report["requestedSeconds"] = duration;
             CheckAudioFile(root);
+            string missingTools = Path.Combine(root, "missing-tools");
+            string untouchedOutput = Path.Combine(root, "missing-tools-output");
+            foreach (string available in new[] { "ffmpeg.exe", "ffprobe.exe" })
+            {
+                Directory.CreateDirectory(missingTools);
+                // A placeholder proves the other dependency is checked before any process starts.
+                File.WriteAllText(Path.Combine(missingTools, available), "test");
+                bool missingRejected = false;
+                try { await new Recorder(missingTools).StartAsync(untouchedOutput, Screen.PrimaryScreen!.Bounds, ""); }
+                catch (FileNotFoundException ex) { missingRejected = ex.Message.Contains("完整安装包") && !ex.Message.Contains(".cmd"); }
+                File.Delete(Path.Combine(missingTools, available));
+                if (!missingRejected || Directory.Exists(untouchedOutput)) throw new Exception("Missing tools must fail before creating a Take");
+            }
+            report["missingToolsRejectedWithoutTake"] = true;
             if (MainForm.FormatTimecode(3601) != "01:00:01" || MainForm.FormatTimecode(90_000) != "25:00:00") throw new Exception("Timecode wraps incorrectly");
             var toggle = (Button)form.Controls.Find("previewToggle", true).Single();
             int expandedHeight = form.Height;
@@ -36,10 +54,10 @@ internal static class SmokeTest
             Recorder recorder = form.CurrentRecorder!;
             CaptureWindow(form, Path.Combine(root, "client-recording.png"));
             var clock = Stopwatch.StartNew(); int index = 0; double flashUntil = -1;
-            while (clock.Elapsed.TotalSeconds < 18)
+            while (clock.Elapsed.TotalSeconds < duration)
             {
                 double now = clock.Elapsed.TotalSeconds;
-                if (index < 3 && now >= 3 + index * 5)
+                if (index < 3 && now >= 3 + index * spacing)
                 {
                     scene.Flash = true; scene.Invalidate(); scene.Update(); player.Play(); flashUntil = now + .3; index++;
                 }
@@ -63,20 +81,20 @@ internal static class SmokeTest
             string take = form.LastFolder!, video = Path.Combine(take, "desktop.mp4");
             var info = await recorder.ProbeAsync(video);
             report["take"] = take; report["media"] = info; report["audioPackets"] = packets;
-            var decode = await recorder.RunAsync("ffmpeg.exe", ["-v", "error", "-xerror", "-i", video, "-f", "null", "NUL"], TimeSpan.FromSeconds(60));
+            var decode = await recorder.RunAsync("ffmpeg.exe", ["-v", "error", "-xerror", "-i", video, "-f", "null", "NUL"], analysisTimeout);
             if (decode.Code != 0) throw new Exception("Full decode failed: " + decode.Error);
             string pcm = Path.Combine(root, "audio-check.f32");
-            var audio = await recorder.RunAsync("ffmpeg.exe", ["-v", "error", "-n", "-i", video, "-vn", "-ac", "1", "-ar", "48000", "-f", "f32le", pcm], TimeSpan.FromSeconds(30));
+            var audio = await recorder.RunAsync("ffmpeg.exe", ["-v", "error", "-n", "-i", video, "-vn", "-ac", "1", "-ar", "48000", "-f", "f32le", pcm], analysisTimeout);
             if (audio.Code != 0) throw new Exception(audio.Error);
             var audioPeaks = ToneStarts(await File.ReadAllBytesAsync(pcm));
-            var stats = await recorder.RunAsync("ffmpeg.exe", ["-hide_banner", "-nostats", "-i", video, "-an", "-vf", "scale=32:18,signalstats,metadata=print:key=lavfi.signalstats.YAVG", "-f", "null", "NUL"], TimeSpan.FromSeconds(60));
+            var stats = await recorder.RunAsync("ffmpeg.exe", ["-hide_banner", "-nostats", "-i", video, "-an", "-vf", "scale=32:18,signalstats,metadata=print:key=lavfi.signalstats.YAVG", "-f", "null", "NUL"], analysisTimeout);
             if (stats.Code != 0) throw new Exception(stats.Error);
             var flashes = FlashStarts(stats.Error);
             report["audioToneStartsSeconds"] = audioPeaks; report["videoFlashStartsSeconds"] = flashes;
             if (audioPeaks.Count != 3 || flashes.Count != 3) throw new Exception($"Expected 3 audible tones and 3 video flashes; got {audioPeaks.Count}/{flashes.Count}");
             var offsets = audioPeaks.Zip(flashes, (a, v) => a - v).ToArray(); report["audioMinusVideoSeconds"] = offsets;
             if (offsets.Any(x => Math.Abs(x) > .25)) throw new Exception("Audio/video offset exceeds 250 ms");
-            if (Math.Abs(audioPeaks[1] - audioPeaks[0] - 5) > .2 || Math.Abs(audioPeaks[2] - audioPeaks[1] - 5) > .2) throw new Exception("Silent gaps were not preserved");
+            if (Math.Abs(audioPeaks[1] - audioPeaks[0] - spacing) > .2 || Math.Abs(audioPeaks[2] - audioPeaks[1] - spacing) > .2) throw new Exception("Silent gaps were not preserved");
             report["fullDecodePassed"] = true;
             // Repeat through the same UI path without test sound; a silent Take must still have an audio track.
             await form.StartRecordingAsync(); if (!form.IsRecording) throw form.LastError ?? new Exception("Second start failed");

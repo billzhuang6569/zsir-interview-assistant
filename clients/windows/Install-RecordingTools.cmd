@@ -22,7 +22,8 @@ copy /Y "%WORK%\ffmpeg-9.0.2-essentials_build\bin\ffmpeg.exe" "%WORK%\tools\" >n
 copy /Y "%WORK%\ffmpeg-9.0.2-essentials_build\bin\ffprobe.exe" "%WORK%\tools\" >nul || goto failed
 copy /Y "%WORK%\ffmpeg-9.0.2-essentials_build\LICENSE" "%WORK%\tools\" >nul || goto failed
 copy /Y "%WORK%\ffmpeg-9.0.2-essentials_build\README.txt" "%WORK%\tools\" >nul || goto failed
-move "%WORK%\tools" "%DEST%" >nul || goto failed
+rem Copy supports output directories on a different drive from TEMP.
+xcopy "%WORK%\tools" "%DEST%\" /E /I /Y >nul || goto failed
 rmdir /s /q "%WORK%"
 echo Installed. Open ZSirCapture.Windows.exe to record offline.
 if /I not "%~1"=="--no-pause" pause

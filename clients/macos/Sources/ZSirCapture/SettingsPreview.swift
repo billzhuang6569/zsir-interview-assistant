@@ -62,11 +62,15 @@ final class SettingsPreview: ObservableObject {
     @Published var sizes: [UInt32: CGSize] = [:]
     private var camera: SettingsCamera?
     private var generation = 0
+    private var legacyPreview: Task<CGImage, Error>?
     func stop() async {
         generation += 1
         let old = camera; camera = nil
+        let oldPreview = legacyPreview; legacyPreview = nil
+        oldPreview?.cancel()
         feed.frame = nil; level = 0; thumbnails = [:]; sizes = [:]
         await old?.stop()
+        _ = try? await oldPreview?.value
     }
     func refresh(selection: DeviceSelection, mode: RecordingMode) async {
         await stop()
@@ -95,12 +99,21 @@ final class SettingsPreview: ObservableObject {
                 guard generation == token, !Task.isCancelled else { return }
                 let own = content.applications.filter { $0.processID == ProcessInfo.processInfo.processIdentifier }
                 let filter = SCContentFilter(display: display, excludingApplications: own, exceptingWindows: [])
-                let scale = CGFloat(filter.pointPixelScale)
-                let size = CGSize(width: Int(filter.contentRect.width * scale) / 2 * 2, height: Int(filter.contentRect.height * scale) / 2 * 2)
+                guard !own.isEmpty else { throw RecordingError("无法排除本工具窗口，已取消预览") }
+                let size = try DisplayCaptureCompatibility.pixelSize(display: display, filter: filter)
                 let config = SCStreamConfiguration()
                 config.width = 360; config.height = max(2, Int(360 * size.height / max(1, size.width)))
-                config.capturesAudio = false; config.showsCursor = false
-                let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+                if #available(macOS 13, *) { config.capturesAudio = false }
+                config.showsCursor = false
+                let image: CGImage
+                if #available(macOS 14, *), !RecordingCapabilities.macOS12Edition {
+                    image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+                } else {
+                    let task = Task { try await LegacyScreenThumbnail().capture(filter: filter, configuration: config) }
+                    legacyPreview = task
+                    image = try await withTaskCancellationHandler { try await task.value } onCancel: { task.cancel() }
+                    if generation == token { legacyPreview = nil }
+                }
                 guard generation == token, !Task.isCancelled else { return }
                 sizes[display.displayID] = size
                 thumbnails[display.displayID] = NSImage(cgImage: image, size: .zero)

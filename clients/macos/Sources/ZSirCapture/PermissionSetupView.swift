@@ -26,7 +26,9 @@ struct PermissionSetupView: View {
                 ForEach(CapturePermission.required(for: model.mode)) { permission in
                     permissionRow(permission)
                 }
-                Text("系统设置 → 隐私与安全性 → 摄像头 / 话筒 / 屏幕与系统音频录制（旧版系统称「屏幕录制」）。开启本应用后返回这里。若系统提示需要重新打开，请用 ⌘Q 退出后重新打开应用。")
+                Text(RecordingCapabilities.macOS12Edition
+                    ? "macOS 12：系统偏好设置 → 安全性与隐私 → 隐私 → 摄像头 / 麦克风 / 屏幕录制。必要时点左下角锁解锁，勾选本应用；若系统要求重新打开，请先退出再启动。桌面视频不包含系统声音。"
+                    : "系统设置 → 隐私与安全性 → 摄像头 / 话筒 / 屏幕与系统音频录制（旧版系统称「屏幕录制」）。开启本应用后返回这里。若系统提示需要重新打开，请用 ⌘Q 退出后重新打开应用。")
                     .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 if let error = setup.settingsError { Text(error).font(.caption).foregroundStyle(.orange) }
             } else {
@@ -57,7 +59,7 @@ struct PermissionSetupView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             setup.refresh(for: model.mode)
         }
-        .onChange(of: model.mode) { _, _ in setup.refresh(for: model.mode) }
+        .onChange(of: model.mode) { mode in setup.refresh(for: mode) }
     }
 
     private var modePicker: some View {

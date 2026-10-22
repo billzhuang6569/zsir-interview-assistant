@@ -84,7 +84,8 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         self.mode = mode
         self.selection = selection
         self.quality = quality
-        self.systemAudio = systemAudio
+        self.systemAudio = systemAudio && RecordingCapabilities.systemAudio
+        let systemAudio = self.systemAudio
         let capacity = try root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         guard (capacity.volumeAvailableCapacityForImportantUsage ?? 0) > 10_000_000_000 else {
             throw RecordingError("至少需要 10 GB 可用空间，请更换输出目录")
@@ -184,22 +185,23 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         guard !ownApps.isEmpty else { throw RecordingError("无法排除本工具窗口，已取消录制") }
         let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
         let configuration = SCStreamConfiguration()
-        // ScreenCaptureKit contentRect is in points; preserve Retina backing pixels.
-        let pixelScale = Double(filter.pointPixelScale)
-        configuration.width = max(2, Int((filter.contentRect.width * pixelScale).rounded()) / 2 * 2)
-        configuration.height = max(2, Int((filter.contentRect.height * pixelScale).rounded()) / 2 * 2)
+        let size = try DisplayCaptureCompatibility.pixelSize(display: display, filter: filter)
+        configuration.width = Int(size.width)
+        configuration.height = Int(size.height)
         let desktopBitRate = try quality.desktopBitRate(width: configuration.width, height: configuration.height)
         displaySize = CGSize(width: CGDisplayPixelsWide(display.displayID), height: CGDisplayPixelsHigh(display.displayID))
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
         configuration.queueDepth = 5
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.capturesAudio = systemAudio
-        configuration.excludesCurrentProcessAudio = false
-        configuration.sampleRate = 48_000
-        configuration.channelCount = 2
+        if #available(macOS 13, *) {
+            configuration.capturesAudio = systemAudio
+            configuration.excludesCurrentProcessAudio = false
+            configuration.sampleRate = 48_000
+            configuration.channelCount = 2
+        }
         let screenStream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try screenStream.addStreamOutput(self, type: .screen, sampleHandlerQueue: mediaQueue)
-        if systemAudio { try screenStream.addStreamOutput(self, type: .audio, sampleHandlerQueue: mediaQueue) }
+        if #available(macOS 13, *), systemAudio { try screenStream.addStreamOutput(self, type: .audio, sampleHandlerQueue: mediaQueue) }
         stream = screenStream
         return desktopBitRate
     }
@@ -228,7 +230,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         let status = "正在写入本机 · 丢帧 \(writers.reduce(0) { $0 + $1.1.droppedVideo })"
         DispatchQueue.main.async { [weak self] in self?.onUpdate?(status, ready, seconds) }
         if seconds > 12 && !ready {
-            fail("12 秒内未收到所选机位的完整音视频；请检查设备权限，并播放一段系统声音后重试")
+            fail("12 秒内未收到所选机位的完整音视频；请检查设备权限和所选设备后重试")
             return
         }
         if let camera, seconds > 12 && seconds - camera.lastVideoSeconds > 8 {
@@ -286,7 +288,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                   let raw = attachments.first?[.status] as? Int,
                   SCFrameStatus(rawValue: raw) == .complete else { return }
             write(sampleBuffer, to: desktop, video: true)
-        } else if type == .audio {
+        } else if #available(macOS 13, *), type == .audio {
             write(sampleBuffer, to: desktop, video: false)
         }
     }

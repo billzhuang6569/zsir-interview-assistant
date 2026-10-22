@@ -7,13 +7,13 @@ enum CapturePermission: String, CaseIterable, Identifiable {
     case camera, microphone, screen
     var id: String { rawValue }
     var title: String {
-        switch self { case .camera: return "摄像头"; case .microphone: return "话筒"; case .screen: return "屏幕与系统声音" }
+        switch self { case .camera: return "摄像头"; case .microphone: return "话筒"; case .screen: return RecordingCapabilities.systemAudio ? "屏幕与系统声音" : "屏幕录制" }
     }
     var purpose: String {
         switch self {
         case .camera: return "将你的人物画面保存为摄像头素材。"
         case .microphone: return "将你的声音录入摄像头素材。"
-        case .screen: return "保存所选显示器画面及电脑播放的声音。"
+        case .screen: return RecordingCapabilities.systemAudio ? "保存所选显示器画面及电脑播放的声音。" : "仅保存所选显示器画面，不录系统播放声音。"
         }
     }
     var settingsPane: String {

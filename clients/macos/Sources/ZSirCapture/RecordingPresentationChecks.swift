@@ -77,7 +77,52 @@ enum RecordingPresentationChecks {
 
 @MainActor
 enum PermissionSetupChecks {
+    static func checkLegacyCapture() async {
+        do {
+            for (pixels, bounds, expected) in [
+                (CGSize(width: 3840, height: 2160), CGSize(width: 1920, height: 1080), CGSize(width: 3840, height: 2160)),
+                (CGSize(width: 3840, height: 2160), CGSize(width: 1080, height: 1920), CGSize(width: 2160, height: 3840)),
+                (CGSize(width: 1920, height: 1080), CGSize(width: 1920, height: 1080), CGSize(width: 1920, height: 1080)),
+                (CGSize(width: 5120, height: 2880), CGSize(width: 2560, height: 1440), CGSize(width: 5120, height: 2880)),
+                (CGSize(width: 3841, height: 2161), CGSize(width: 1920, height: 1080), CGSize(width: 3840, height: 2160))
+            ] {
+                let actual = try DisplayCaptureCompatibility.legacyPixelSize(modePixels: pixels, bounds: bounds)
+                precondition(actual == expected)
+            }
+        } catch { preconditionFailure("Valid display size rejected: \(error)") }
+        do { _ = try DisplayCaptureCompatibility.evenSize(CGSize(width: 0, height: 2)); preconditionFailure("Invalid size accepted") }
+        catch {}
+        let pixel = CGImage(width: 2, height: 2, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 8,
+                            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+                            provider: CGDataProvider(data: Data(repeating: 0, count: 16) as CFData)!, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
+        let early = LegacyScreenThumbnail()
+        early.resolve(.success(pixel))
+        early.resolve(.failure(CancellationError()))
+        do { let image = try await early.waitForImage(); precondition(image.width == 2) }
+        catch { preconditionFailure("First frame must win") }
+        let waiting = LegacyScreenThumbnail()
+        Task { @MainActor in waiting.resolve(.success(pixel)); waiting.resolve(.failure(CancellationError())) }
+        do { let image = try await waiting.waitForImage(); precondition(image.width == 2) }
+        catch { preconditionFailure("Waiting frame delivery failed") }
+        let interrupted = LegacyScreenThumbnail()
+        Task { @MainActor in interrupted.resolve(.failure(CancellationError())) }
+        do { _ = try await interrupted.waitForImage(); preconditionFailure("Pending request was not cancelled") }
+        catch { precondition(error is CancellationError) }
+        let timed = LegacyScreenThumbnail()
+        do { _ = try await timed.waitForImage(timeoutNanoseconds: 1_000_000); preconditionFailure("Missing timeout") }
+        catch { precondition(!(error is CancellationError)) }
+        timed.resolve(.success(pixel)) // A late frame cannot resume a timed-out continuation.
+        let cancelled = LegacyScreenThumbnail()
+        let pending = Task { try await cancelled.waitForImage() }
+        pending.cancel()
+        do { _ = try await pending.value; preconditionFailure("Cancelled request returned a frame") }
+        catch { precondition(error is CancellationError) }
+        cancelled.resolve(.success(pixel))
+        print("PASS: legacy display pixel sizes, rotation, invalid dimensions, early frame, timeout, cancellation and late callbacks")
+    }
+
     static func run() async {
+        await checkLegacyCapture()
         let name = "com.zsir.permission-checks.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
@@ -133,7 +178,13 @@ enum PermissionSetupChecks {
         precondition(!reopened.visible, "Completed setup skips automatic welcome")
         let model = CaptureModel(permissions: reopened)
         precondition(model.detail.isEmpty)
-        precondition(model.quality == .standard && model.systemAudio && !model.autoRecovery)
+        precondition(model.quality == .standard && model.systemAudio == RecordingCapabilities.systemAudio && !model.autoRecovery)
+        if !RecordingCapabilities.systemAudio {
+            model.systemAudio = true
+            precondition(!model.systemAudio, "Unsupported system audio cannot be enabled")
+            defaults.set(true, forKey: "systemAudio")
+            precondition(!CaptureModel(permissions: reopened).systemAudio, "Old preferences cannot enable system audio")
+        }
         model.quality = .high; model.systemAudio = false; model.autoRecovery = true
         model.selection.cameraID = "test-camera"; model.selection.microphoneID = "test-mic"
         let restored = CaptureModel(permissions: reopened)

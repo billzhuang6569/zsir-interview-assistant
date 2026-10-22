@@ -39,7 +39,7 @@ internal sealed class Recorder
         targetVideoBitRate = RecordingOptions.BitRate(quality, bounds.Width, bounds.Height);
         if (Folder != null) throw new InvalidOperationException("每个录制实例只能使用一次");
         foreach (string tool in new[] { "ffmpeg.exe", "ffprobe.exe" })
-            if (!File.Exists(Path.Combine(tools, tool))) throw new FileNotFoundException("缺少编码工具，请先运行 Install-RecordingTools.cmd，再重新开始录制", tool);
+            if (!File.Exists(Path.Combine(tools, tool))) throw new FileNotFoundException("录制组件缺失，请重新下载完整安装包并完整解压后打开；不要只复制 EXE。已有录制素材不会受影响", tool);
         Directory.CreateDirectory(root);
         CheckSpace(root, 10_000_000_000);
         Folder = Path.Combine(root, "Take-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8]);

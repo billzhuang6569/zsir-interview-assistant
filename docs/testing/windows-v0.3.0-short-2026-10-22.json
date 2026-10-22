@@ -1,0 +1,86 @@
+{
+  "startedAt": "2026-10-22T05:04:16.1260437+00:00",
+  "productClient": true,
+  "microphoneOpened": false,
+  "requestedSeconds": 18,
+  "missingToolsRejectedWithoutTake": true,
+  "previewLayoutPassed": true,
+  "dockedTimecode": "00:00:18",
+  "edgeDockAndRevealPassed": true,
+  "take": "Take-20261022-130416-9ceb048d",
+  "media": {
+    "durationSeconds": 21.2,
+    "bytes": 600011,
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 2560,
+        "height": 1440,
+        "duration": "21.200000",
+        "nb_frames": "491",
+        "avg_frame_rate": "2455/106"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2,
+        "duration": "21.200000",
+        "nb_frames": "995",
+        "avg_frame_rate": "0/0"
+      }
+    ]
+  },
+  "audioPackets": 198,
+  "audioToneStartsSeconds": [
+    5.24,
+    10.19,
+    15.23
+  ],
+  "videoFlashStartsSeconds": [
+    5.2,
+    10.166667,
+    15.266667
+  ],
+  "audioMinusVideoSeconds": [
+    0.040000000000000036,
+    0.02333299999999916,
+    -0.03666699999999956
+  ],
+  "fullDecodePassed": true,
+  "stopRestoresWindow": true,
+  "secondTake": "Take-20261022-130448-6cc4d591",
+  "secondMedia": {
+    "durationSeconds": 19.733333,
+    "bytes": 371403,
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 2560,
+        "height": 1440,
+        "duration": "19.733333",
+        "nb_frames": "441",
+        "avg_frame_rate": "6615/296"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2,
+        "duration": "19.733333",
+        "nb_frames": "926",
+        "avg_frame_rate": "0/0"
+      }
+    ]
+  },
+  "missingDeviceRejected": true,
+  "interruptedTake": "Take-20261022-130510-31abd230",
+  "interruptedVideoReadable": true,
+  "encoderInterruptionHandled": true,
+  "audioFileChecksPassed": true,
+  "state": "passed",
+  "finishedAt": "2026-10-22T05:05:28.8932762+00:00",
+  "packageSHA256": "2bbefaa77d6f84a3d2db53feded84439e02b71348adc705fab66033fda7797f0"
+}

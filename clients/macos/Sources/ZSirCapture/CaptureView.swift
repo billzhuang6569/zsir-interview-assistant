@@ -17,7 +17,7 @@ struct CaptureView: View {
             HStack(spacing: 8) {
                 Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 26, height: 26)
                     .accessibilityHidden(true)
-                Text("庄Sir采访录制助手").font(.system(size: 12, weight: .semibold))
+                Text(RecordingCapabilities.applicationName).font(.system(size: 12, weight: .semibold))
                 Spacer(minLength: 0)
                 Button { NSApp.terminate(nil) } label: { Image(systemName: "xmark").frame(width: 24, height: 24) }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
@@ -67,7 +67,7 @@ struct CaptureView: View {
                             LiveVideoPreview(feed: model.cameraPreview, title: "摄像头 · 话筒", symbol: "video", height: model.mode == .both ? 86 : 148, recording: model.canStop, busy: model.busy)
                         }
                         if model.mode.includesDesktop {
-                            LiveVideoPreview(feed: model.desktopPreview, title: "桌面 · 系统声音", symbol: "display", height: model.mode == .both ? 86 : 148, recording: model.canStop, busy: model.busy)
+                            LiveVideoPreview(feed: model.desktopPreview, title: model.systemAudio ? "桌面 · 系统声音" : "桌面 · 无声音", symbol: "display", height: model.mode == .both ? 86 : 148, recording: model.canStop, busy: model.busy)
                         }
                     }
                 }
@@ -94,7 +94,7 @@ struct CaptureView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .background(GeometryReader { geometry in
             Color.clear.onAppear { model.onResize?(geometry.size.height) }
-                .onChange(of: geometry.size.height) { _, height in model.onResize?(height) }
+                .onChange(of: geometry.size.height) { height in model.onResize?(height) }
         })
         .preferredColorScheme(.dark).ignoresSafeArea()
         .sheet(isPresented: $model.settingsVisible) { CaptureSettings(model: model).preferredColorScheme(.dark) }
