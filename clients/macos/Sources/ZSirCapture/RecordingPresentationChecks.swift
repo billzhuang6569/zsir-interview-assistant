@@ -7,6 +7,23 @@ enum RecordingPresentationChecks {
     static func run() {
         checkTimecode()
         checkDocking()
+        let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
+        let size = NSSize(width: 390, height: 300)
+        let target = NSRect(x: 100, y: 200, width: 600, height: 600)
+        precondition(PermissionGuide.origin(beside: target, size: size, visible: visible) == NSPoint(x: 712, y: 500))
+        precondition(PermissionGuide.origin(beside: target.offsetBy(dx: 500, dy: 0), size: size, visible: visible) == NSPoint(x: 198, y: 500))
+        let external = NSRect(x: -1440, y: -200, width: 1440, height: 900)
+        precondition(PermissionGuide.origin(beside: target.offsetBy(dx: -1440, dy: -200), size: size, visible: external) == NSPoint(x: -728, y: 300))
+        let narrow = NSRect(x: 0, y: 0, width: 800, height: 600)
+        precondition(PermissionGuide.origin(beside: target, size: size, visible: narrow) == nil)
+        for x in stride(from: -200, through: 1600, by: 100) {
+            let moved = target.offsetBy(dx: CGFloat(x), dy: 0)
+            if let point = PermissionGuide.origin(beside: moved, size: size, visible: visible) {
+                let guide = NSRect(origin: point, size: size)
+                precondition(visible.contains(guide) && !guide.intersects(moved))
+            }
+        }
+        print("PASS: non-overlapping permission guide placement")
         print("PASS: timecode formatting, ready gate, idle timeout, interaction reset, reopen grace, failure and stop restoration")
     }
     static func checkTimecode() {
@@ -116,6 +133,14 @@ enum PermissionSetupChecks {
         precondition(!reopened.visible, "Completed setup skips automatic welcome")
         let model = CaptureModel(permissions: reopened)
         precondition(model.detail.isEmpty)
+        precondition(model.quality == .standard && model.systemAudio && !model.autoRecovery)
+        model.quality = .high; model.systemAudio = false; model.autoRecovery = true
+        model.selection.cameraID = "test-camera"; model.selection.microphoneID = "test-mic"
+        let restored = CaptureModel(permissions: reopened)
+        precondition(restored.quality == .high && !restored.systemAudio && restored.autoRecovery)
+        precondition(restored.selection.cameraID == "test-camera" && restored.selection.microphoneID == "test-mic")
+        defaults.set("invalid", forKey: "recordingQuality")
+        precondition(CaptureModel(permissions: reopened).quality == .standard)
         precondition(model.mode.title == "摄像头+桌面")
         model.mode = .camera
         precondition(defaults.string(forKey: "recordingMode") == "camera")

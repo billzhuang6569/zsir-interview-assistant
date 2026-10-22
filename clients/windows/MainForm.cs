@@ -6,6 +6,8 @@ namespace ZSirCapture;
 
 internal sealed class MainForm : Form
 {
+    readonly RecordingOptions options = RecordingOptions.Load();
+    readonly Button settingsButton = new() { Text = "录制设置", AutoSize = true };
     readonly ComboBox screens = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
     readonly ComboBox outputs = new() { DropDownStyle = ComboBoxStyle.DropDownList, Dock = DockStyle.Fill };
     readonly Button action = new() { Text = "开始录制", AutoSize = true, BackColor = Color.FromArgb(232, 93, 46), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
@@ -74,7 +76,8 @@ internal sealed class MainForm : Form
         devices.ColumnStyles.Add(new(SizeType.Absolute, 64)); devices.ColumnStyles.Add(new(SizeType.Percent, 100));
         devices.Controls.Add(new Label { Text = "画面", AutoSize = true }, 0, 0); devices.Controls.Add(screens, 1, 0);
         devices.Controls.Add(new Label { Text = "系统声音", AutoSize = true }, 0, 1); devices.Controls.Add(outputs, 1, 1);
-        layout.Controls.Add(devices); layout.Controls.Add(sound);
+        settingsButton.Click += (_, _) => ShowRecordingSettings();
+        layout.Controls.Add(settingsButton); layout.Controls.Add(sound);
         fold.Name = "previewToggle";
         fold.Click += (_, _) => TogglePreview();
         layout.Controls.Add(fold); layout.Controls.Add(preview);
@@ -113,7 +116,7 @@ internal sealed class MainForm : Form
             if (!recording || recorder == null) return;
             clock.Text = FormatTimecode(recorder.Seconds);
             detail.Text = "正在写入本机 · 15 秒无操作后收起";
-            sound.Text = recorder.Peak > .001 ? "●  收到系统声音" : "○  系统声音静音 · 时长正常保留";
+            sound.Text = !options.SystemAudio ? "系统声音已关闭" : recorder.Peak > .001 ? "●  收到系统声音" : "○  系统声音静音 · 时长正常保留";
             try { recorder.CheckHealth(); }
             catch (Exception ex) { await StopRecordingAsync(ex.Message); }
             edge.Tick();
@@ -134,6 +137,57 @@ internal sealed class MainForm : Form
         try { if (File.Exists(preference)) { string saved = File.ReadAllText(preference).Trim(); if (Path.IsPathFullyQualified(saved)) root = saved; } RefreshDevices(); }
         catch (Exception ex) { ShowError(ex); }
         timer.Start();
+    }
+
+    void ShowRecordingSettings()
+    {
+        if (busy) return;
+        RefreshDevices();
+        using var dialog = new Form { Text = "录制设置", Size = new(720, 660), StartPosition = FormStartPosition.CenterParent, BackColor = BackColor, ForeColor = Ink, Font = Font, AutoScroll = true, MinimizeBox = false, MaximizeBox = false };
+        var content = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new(24) };
+        dialog.Controls.Add(content);
+        var title = new Label { Text = "桌面画面 · 点击缩略图选择", AutoSize = true, Font = new(Font, FontStyle.Bold) }; content.Controls.Add(title);
+        var cards = new FlowLayoutPanel { Width = 640, Height = 200, AutoScroll = true, WrapContents = false };
+        content.Controls.Add(cards);
+        var estimate = new Label { AutoSize = true, MaximumSize = new(620, 0) };
+        void Estimate() {
+            var screen = Screen.AllScreens.FirstOrDefault(x => x.DeviceName == options.ScreenId);
+            estimate.Text = screen == null ? "所选屏幕已断开，请重新选择" : $"{screen.Bounds.Width} × {screen.Bounds.Height} · {RecordingOptions.BitRate(options.Quality, screen.Bounds.Width, screen.Bounds.Height) / 1_000_000.0:0.#} Mbps · 成品约 {(RecordingOptions.BitRate(options.Quality, screen.Bounds.Width, screen.Bounds.Height) / 1_000_000.0 + (options.SystemAudio ? .192 : 0)) * .45:0.0} GB/小时\nWindows 保留中间素材，实际磁盘占用高于成品。";
+        }
+        void FillScreens() {
+            foreach (Control c in cards.Controls.Cast<Control>().ToArray()) { if (c is Button b) b.Image?.Dispose(); c.Dispose(); }
+            cards.Controls.Clear(); RefreshDevices();
+            foreach (var screen in Screen.AllScreens) {
+                var card = new Button { Width = 270, Height = 170, Text = screen.DeviceName + (options.ScreenId == screen.DeviceName ? " · 已选择" : ""), TextImageRelation = TextImageRelation.ImageAboveText, BackColor = options.ScreenId == screen.DeviceName ? Color.FromArgb(80, 48, 30) : BackColor, ForeColor = Ink, FlatStyle = FlatStyle.Flat, AccessibleName = "选择录制屏幕 " + screen.DeviceName };
+                try {
+                    using var bitmap = new Bitmap(screen.Bounds.Width, screen.Bounds.Height);
+                    using (var g = Graphics.FromImage(bitmap)) g.CopyFromScreen(screen.Bounds.Location, Point.Empty, screen.Bounds.Size);
+                    card.Image = new Bitmap(bitmap, new Size(240, Math.Max(1, 240 * bitmap.Height / bitmap.Width)));
+                } catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or ArgumentException) { card.Text += " · 预览不可用"; }
+                card.Click += (_, _) => { options.ScreenId = screen.DeviceName; options.Save(); FillScreens(); Estimate(); };
+                cards.Controls.Add(card);
+            }
+        }
+        FillScreens();
+        var captureAudio = new CheckBox { Text = "同时录下电脑里播放的声音", Checked = options.SystemAudio, AutoSize = true };
+        content.Controls.Add(captureAudio);
+        content.Controls.Add(new Label { Text = "默认播放设备（全部播放声音），也可指定输出设备", AutoSize = true });
+        var audioChoice = new ComboBox { Width = 620, DropDownStyle = ComboBoxStyle.DropDownList, Enabled = options.SystemAudio };
+        audioChoice.Items.AddRange(outputs.Items.Cast<object>().ToArray());
+        audioChoice.SelectedItem = outputs.SelectedItem; content.Controls.Add(audioChoice);
+        audioChoice.SelectedIndexChanged += (_, _) => { options.AudioId = (audioChoice.SelectedItem as AudioDevice)?.Id ?? ""; options.Save(); RefreshDevices(); };
+        captureAudio.CheckedChanged += (_, _) => { options.SystemAudio = captureAudio.Checked; audioChoice.Enabled = options.SystemAudio; options.Save(); Estimate(); };
+        content.Controls.Add(new Label { Text = "画质", AutoSize = true, Padding = new(0, 14, 0, 0) });
+        var quality = new ComboBox { Width = 620, DropDownStyle = ComboBoxStyle.DropDownList };
+        quality.Items.AddRange(["省空间", "标准 · 推荐", "高画质"]);
+        string[] levels = ["compact", "standard", "high"]; quality.SelectedIndex = Math.Max(0, Array.IndexOf(levels, options.Quality));
+        quality.SelectedIndexChanged += (_, _) => { options.Quality = levels[quality.SelectedIndex]; options.Save(); Estimate(); };
+        content.Controls.Add(quality); content.Controls.Add(estimate); Estimate();
+        var refreshDevices = new Button { Text = "重新检测设备", AutoSize = true };
+        refreshDevices.Click += (_, _) => { FillScreens(); Estimate(); }; content.Controls.Add(refreshDevices);
+        var done = new Button { Text = "完成", AutoSize = true, BackColor = Color.FromArgb(255, 102, 38) }; done.Click += (_, _) => dialog.Close(); content.Controls.Add(done);
+        dialog.FormClosed += (_, _) => { foreach (Button card in cards.Controls) card.Image?.Dispose(); };
+        dialog.ShowDialog(this);
     }
 
     void TogglePreview()
@@ -206,13 +260,16 @@ internal sealed class MainForm : Form
     {
         try
         {
-            string? screenId = (screens.SelectedItem as ScreenOption)?.Id;
-            string? deviceId = (outputs.SelectedItem as AudioDevice)?.Id;
-            screens.Items.Clear(); screens.Items.Add(new ScreenOption("", "系统主显示器"));
+            string screenId = options.ScreenId;
+            if (screenId.Length == 0) screenId = Screen.PrimaryScreen?.DeviceName ?? "";
+            string deviceId = options.AudioId;
+            screens.Items.Clear();
             foreach (var screen in Screen.AllScreens) screens.Items.Add(new ScreenOption(screen.DeviceName, $"{screen.DeviceName} · {screen.Bounds.Width}×{screen.Bounds.Height}"));
-            screens.SelectedItem = screens.Items.Cast<ScreenOption>().FirstOrDefault(x => x.Id == screenId) ?? screens.Items[0];
+            if (!screens.Items.Cast<ScreenOption>().Any(x => x.Id == screenId)) screens.Items.Add(new ScreenOption(screenId, "原目标已断开，请在设置中重选"));
+            screens.SelectedItem = screens.Items.Cast<ScreenOption>().First(x => x.Id == screenId);
+            options.ScreenId = screenId;
             outputs.Items.Clear(); outputs.Items.AddRange(CoreAudio.Devices().Cast<object>().ToArray());
-            outputs.SelectedItem = outputs.Items.Cast<AudioDevice>().FirstOrDefault(x => x.Id == deviceId) ?? outputs.Items[0];
+            outputs.SelectedItem = outputs.Items.Cast<AudioDevice>().FirstOrDefault(x => x.Id == deviceId) ?? (deviceId.Length == 0 && outputs.Items.Count > 0 ? outputs.Items[0] : null);
         }
         catch (Exception ex) { ShowError(ex); }
     }
@@ -224,9 +281,11 @@ internal sealed class MainForm : Form
         try
         {
             if (!excluded) throw new InvalidOperationException("小窗排除设置未成功，取消录制");
-            string id = (screens.SelectedItem as ScreenOption)?.Id ?? "";
+            RefreshDevices();
+            string id = options.ScreenId;
             Screen screen = id.Length == 0 ? Screen.PrimaryScreen! : Screen.AllScreens.FirstOrDefault(x => x.DeviceName == id) ?? throw new InvalidOperationException("所选显示器已断开");
-            var audioDevice = outputs.SelectedItem as AudioDevice ?? throw new InvalidOperationException("请选择系统声音输出设备");
+            var audioDevice = outputs.SelectedItem as AudioDevice;
+            if (options.SystemAudio && audioDevice == null) throw new InvalidOperationException("请选择系统声音输出设备");
             SetThreadExecutionState(0x80000001);
             var current = new Recorder(tools) { PreviewEnabled = previewVisible };
             recorder = current;
@@ -250,7 +309,7 @@ internal sealed class MainForm : Form
                 catch (InvalidOperationException) { Interlocked.Exchange(ref pendingPreview, 0); }
             };
             var previous = preview.Image; preview.Image = null; previous?.Dispose();
-            await current.StartAsync(root, screen.Bounds, audioDevice.Id);
+            await current.StartAsync(root, screen.Bounds, audioDevice?.Id ?? "", options.Quality, options.SystemAudio);
             lastFolder = current.Folder; recording = true; clock.Visible = true; edge.ResetIdle();
             state.Text = "● 正在录制"; state.ForeColor = Color.FromArgb(255, 137, 106);
             action.Text = "■  停止并保存"; action.Enabled = true; fold.Text = previewVisible ? "实时预览  ∧" : "展开实时预览  ∨"; FitContent();
@@ -281,12 +340,13 @@ internal sealed class MainForm : Form
             fold.Text = previewVisible ? "上次录制画面  ∧" : "展开上次画面  ∨"; FitContent();
         }
     }
-    void SetControls(bool enabled) { screens.Enabled = outputs.Enabled = folder.Enabled = refresh.Enabled = enabled; action.Enabled = enabled && excluded; }
+    void SetControls(bool enabled) { settingsButton.Enabled = screens.Enabled = outputs.Enabled = folder.Enabled = refresh.Enabled = enabled; action.Enabled = enabled && excluded; }
     void ShowError(Exception ex) { edge.Reveal(false); LastError = ex; detail.Text = ex.Message; FitContent(); if (!Automation) MessageBox.Show(this, ex.Message, "录制提示", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
     protected override void WndProc(ref Message message)
     {
         if ((message.Msg == 0x218 && message.WParam.ToInt32() == 4 || message.Msg == 0x7E) && recording)
             BeginInvoke((Action)(async () => await StopRecordingAsync("系统睡眠或显示器配置改变，请检查已保留素材")));
+        if ((message.Msg == 0x219 || message.Msg == 0x7E) && !busy) BeginInvoke((Action)RefreshDevices);
         base.WndProc(ref message);
     }
     [DllImport("user32.dll", SetLastError = true)] static extern bool SetWindowDisplayAffinity(IntPtr window, uint affinity);

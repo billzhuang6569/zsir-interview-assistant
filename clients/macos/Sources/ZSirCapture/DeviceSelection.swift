@@ -1,7 +1,7 @@
 import AppKit
 import AVFoundation
 
-struct DeviceSelection {
+struct DeviceSelection: Equatable {
     var cameraID = ""
     var microphoneID = ""
     var displayID: UInt32 = 0

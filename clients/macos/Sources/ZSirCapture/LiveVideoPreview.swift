@@ -41,14 +41,14 @@ struct LiveVideoPreview: View {
     }
 }
 
-private struct VideoSurface: NSViewRepresentable {
+struct VideoSurface: NSViewRepresentable {
     let sample: CMSampleBuffer
 
     func makeNSView(context: Context) -> VideoSurfaceView { VideoSurfaceView() }
     func updateNSView(_ view: VideoSurfaceView, context: Context) { view.display(sample) }
 }
 
-private final class VideoSurfaceView: NSView {
+final class VideoSurfaceView: NSView {
     private let videoLayer = AVSampleBufferDisplayLayer()
     private var lastSample: CMSampleBuffer?
 

@@ -11,6 +11,34 @@ final class RecordingCoreChecks {
         return url
     }
 
+    func testQualityAndSilentRecovery() async throws {
+        expectEqual(try RecordingQuality.standard.desktopBitRate(width: 1920, height: 1080), 12_000_000)
+        expectEqual(try RecordingQuality.high.desktopBitRate(width: 3840, height: 2160), 72_000_000)
+        expectEqual(try RecordingQuality.compact.desktopBitRate(width: 720, height: 1280), 6_000_000)
+        expectEqual(try RecordingQuality.standard.desktopBitRate(width: 3841, height: 2161), 48_000_000)
+        do { _ = try RecordingQuality.high.desktopBitRate(width: 0, height: 1080); fatalError("invalid size accepted") } catch {}
+        for quality in RecordingQuality.allCases {
+            let root = try temporaryFolder()
+            let take = try TakeFiles.create(in: root)
+            let url = take.appendingPathComponent("desktop.mp4")
+            try TakeFiles.writeReport(["state": "needs_review", "systemAudio": false], in: take)
+            let writer = MovieWriter(url: url, epoch: .zero, videoBitRate: quality.cameraBitRate, includesAudio: false)
+            for frame in 0..<20 {
+                try writer.append(videoSample(at: CMTime(value: Int64(frame), timescale: 30)), isVideo: true)
+                try await Task.sleep(nanoseconds: 33_333_333)
+            }
+            try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in writer.finish(at: CMTime(seconds: 1, preferredTimescale: 600)) { c.resume(with: $0) } }
+            let asset = AVURLAsset(url: url)
+            expectEqual(try await asset.loadTracks(withMediaType: .audio).count, 0)
+            try await RecordingRecovery.validate(url, requiresAudio: false)
+            let original = try Data(contentsOf: url)
+            let candidate = try unwrap(RecordingRecovery.scan(root: root).first)
+            let result = try await RecordingRecovery.recover(candidate)
+            expect(result.errors.isEmpty); expectEqual(result.files.count, 1)
+            expectEqual(try Data(contentsOf: url), original)
+        }
+    }
+
     func testTakeDirectoriesNeverOverwriteExistingMedia() throws {
         let root = try temporaryFolder()
         let first = try TakeFiles.create(in: root)
@@ -287,6 +315,8 @@ func unwrap<T>(_ value: T?) throws -> T {
             return
         }
         defer { for folder in checks.folders { try? FileManager.default.removeItem(at: folder) } }
+        try await checks.testQualityAndSilentRecovery()
+        print("PASS: quality rates, invalid sizes, three silent MP4 files and recovery preserve originals")
         try await checks.testKilledProcessRecoveryPreservesOriginal()
         print("PASS: active Take lock, SIGKILL recovery, original preservation, invalid input and symlink exclusion")
         try checks.testLivePreviewDoesNotChangeRecordingSamples()

@@ -59,6 +59,7 @@ public enum RecordingRecovery {
         defer { withExtendedLifetime(lease) {} }
         let output = candidate.folder.appendingPathComponent("Recovered-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: output, withIntermediateDirectories: false)
+        let sourceReport = (try? JSONSerialization.jsonObject(with: Data(contentsOf: candidate.folder.appendingPathComponent("report.json")))) as? [String: Any]
         var recovered: [URL] = []
         var errors: [String] = []
         for input in candidate.files {
@@ -85,7 +86,7 @@ public enum RecordingRecovery {
                 guard export.status == .completed else {
                     throw export.error ?? RecordingError("恢复封装失败，原素材已保留")
                 }
-                try await validate(partial)
+                try await validate(partial, requiresAudio: !(input.lastPathComponent == "desktop.mp4" && sourceReport?["systemAudio"] as? Bool == false))
                 let result = output.appendingPathComponent(input.lastPathComponent)
                 try FileManager.default.moveItem(at: partial, to: result)
                 recovered.append(result)
@@ -105,12 +106,13 @@ public enum RecordingRecovery {
         return RecoveryResult(outputFolder: output, files: recovered, errors: errors)
     }
 
-    public static func validate(_ url: URL) async throws {
+    public static func validate(_ url: URL, requiresAudio: Bool = true) async throws {
         let asset = AVURLAsset(url: url)
         let duration = try await asset.load(.duration)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
         guard duration.seconds.isFinite, duration.seconds > 0,
               !(try await asset.loadTracks(withMediaType: .video)).isEmpty,
-              !(try await asset.loadTracks(withMediaType: .audio)).isEmpty else {
+              (!requiresAudio || !audioTracks.isEmpty) else {
             throw RecordingError("恢复副本缺少有效音视频，原文件仍保留")
         }
         let generator = AVAssetImageGenerator(asset: asset)

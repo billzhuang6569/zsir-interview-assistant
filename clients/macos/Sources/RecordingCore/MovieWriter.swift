@@ -11,6 +11,7 @@ public final class MovieWriter {
     private let url: URL
     private let epoch: CMTime
     public let videoBitRate: Int
+    public let includesAudio: Bool
     private var writer: AVAssetWriter?
     private var video: AVAssetWriterInput?
     private var audio: AVAssetWriterInput?
@@ -25,9 +26,10 @@ public final class MovieWriter {
     public private(set) var lastAudioSeconds: Double = 0
     public private(set) var firstVideoSeconds: Double?
 
-    public init(url: URL, epoch: CMTime, videoBitRate: Int = 12_000_000) {
+    public init(url: URL, epoch: CMTime, videoBitRate: Int = 12_000_000, includesAudio: Bool = true) {
         precondition(videoBitRate > 0)
         self.videoBitRate = videoBitRate
+        self.includesAudio = includesAudio
         self.url = url
         self.epoch = epoch
     }
@@ -62,18 +64,18 @@ public final class MovieWriter {
             ])
             videoInput.expectsMediaDataInRealTime = true
             audioInput.expectsMediaDataInRealTime = true
-            guard candidate.canAdd(videoInput), candidate.canAdd(audioInput) else {
+            guard candidate.canAdd(videoInput), !includesAudio || candidate.canAdd(audioInput) else {
                 throw RecordingError("无法建立 H.264 / AAC 编码管线")
             }
             candidate.add(videoInput)
-            candidate.add(audioInput)
+            if includesAudio { candidate.add(audioInput) }
             guard candidate.startWriting() else {
                 throw candidate.error ?? RecordingError("无法开始写入视频")
             }
             candidate.startSession(atSourceTime: .zero)
             writer = candidate
             video = videoInput
-            audio = audioInput
+            audio = includesAudio ? audioInput : nil
         }
         guard let writer, writer.status == .writing else {
             throw writer?.error ?? RecordingError("编码器已停止写入")

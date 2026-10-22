@@ -17,6 +17,10 @@ internal sealed class Recorder
     double? videoStartUnix;
     double clockOffset;
     bool stopping;
+    bool systemAudio = true;
+    string quality = "standard";
+    int targetVideoBitRate;
+    Rectangle captureBounds;
     public string? Folder { get; private set; }
     public string? Failure { get; private set; }
     public float Peak => audio.Peak;
@@ -29,8 +33,10 @@ internal sealed class Recorder
     internal Process? Encoder => process;
     public Recorder(string toolsDirectory) { tools = toolsDirectory; }
 
-    public async Task StartAsync(string root, Rectangle bounds, string audioDevice)
+    public async Task StartAsync(string root, Rectangle bounds, string audioDevice, string quality = "standard", bool systemAudio = true)
     {
+        this.quality = quality; this.systemAudio = systemAudio; captureBounds = bounds;
+        targetVideoBitRate = RecordingOptions.BitRate(quality, bounds.Width, bounds.Height);
         if (Folder != null) throw new InvalidOperationException("每个录制实例只能使用一次");
         foreach (string tool in new[] { "ffmpeg.exe", "ffprobe.exe" })
             if (!File.Exists(Path.Combine(tools, tool))) throw new FileNotFoundException("缺少编码工具，请先运行 Install-RecordingTools.cmd，再重新开始录制", tool);
@@ -42,10 +48,10 @@ internal sealed class Recorder
         try
         {
             Report("preparing");
-            await audio.StartAsync(Path.Combine(Folder, "system-audio.wav"), audioDevice).WaitAsync(TimeSpan.FromSeconds(10));
+            if (systemAudio) await audio.StartAsync(Path.Combine(Folder, "system-audio.wav"), audioDevice).WaitAsync(TimeSpan.FromSeconds(10));
             clockOffset = Clock.Unix - Clock.Qpc;
             int width = bounds.Width / 2 * 2, height = bounds.Height / 2 * 2;
-            int rate = (int)Math.Max(12_000_000, 12_000_000.0 * width * height / (1920 * 1080));
+            int rate = targetVideoBitRate;
             log = new StreamWriter(Path.Combine(Folder, "capture.log"), false) { AutoFlush = true };
             process = new Process { StartInfo = StartInfo("ffmpeg.exe", [
                 "-hide_banner", "-n", "-nostats", "-stats_period", "1", "-progress", "pipe:2",
@@ -90,7 +96,7 @@ internal sealed class Recorder
     {
         if (stopping) return;
         if (Failure != null) throw new IOException(Failure);
-        if (audio.Failure != null) throw new InvalidOperationException("系统声音采集中断：" + audio.Failure.Message);
+        if (systemAudio && audio.Failure != null) throw new InvalidOperationException("系统声音采集中断：" + audio.Failure.Message);
         if (process?.HasExited == true) throw new InvalidOperationException("桌面编码进程已退出，原始素材已保留");
         if (Math.Abs(Clock.Unix - Clock.Qpc - clockOffset) > .25) throw new InvalidOperationException("系统时间发生跳变，已停止以避免音画错位");
         if (Folder != null)
@@ -113,6 +119,14 @@ internal sealed class Recorder
             var videoInfo = await ProbeAsync(Path.Combine(Folder, "desktop-video.mp4"));
             double duration = double.Parse(videoInfo.GetProperty("format").GetProperty("duration").GetString()!, CultureInfo.InvariantCulture);
             if (!double.IsFinite(duration) || duration <= 0) throw new InvalidOperationException("桌面文件时长无效");
+            if (!systemAudio) {
+                string silentOutput = Path.Combine(Folder, "desktop.mp4");
+                CheckSpace(Folder, new FileInfo(Path.Combine(Folder, "desktop-video.mp4")).Length + 512_000_000);
+                if (!videoInfo.GetProperty("streams").EnumerateArray().Any(x => x.GetProperty("codec_type").GetString() == "video")) throw new InvalidOperationException("输出缺少视频轨道");
+                File.Copy(Path.Combine(Folder, "desktop-video.mp4"), silentOutput, false);
+                Report(Failure == null ? "finalized_unverified" : "needs_review", new { duration, error = Failure, output = "desktop.mp4" });
+                return silentOutput;
+            }
             double offset = videoStartUnix.Value - audio.OriginUnix;
             if (offset < 0 || offset > 30) throw new InvalidOperationException("音画起始偏移异常，保留原素材");
             CheckSpace(Folder, new FileInfo(Path.Combine(Folder, "desktop-video.mp4")).Length + (long)(duration * 24_000) + 512_000_000);
@@ -165,7 +179,7 @@ internal sealed class Recorder
             }
         }
         }
-        finally { await audio.StopAsync(); }
+        finally { if (systemAudio) await audio.StopAsync(); }
     }
 
     async Task ReadPreviewAsync(Stream source)
@@ -214,7 +228,7 @@ internal sealed class Recorder
     {
         if (Folder == null) return;
         string path = Path.Combine(Folder, "report.json"), temporary = path + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(new { state, platform = "windows", mode = "desktop", device = audio.DeviceName, details, updatedAt = DateTimeOffset.UtcNow }, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(temporary, JsonSerializer.Serialize(new { state, platform = "windows", mode = "desktop", quality, qualityVersion = 1, systemAudio, targetVideoBitRate, captureBounds, device = audio.DeviceName, details, updatedAt = DateTimeOffset.UtcNow }, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(temporary, path, true);
     }
     static string N(object value) => Convert.ToString(value, CultureInfo.InvariantCulture)!;

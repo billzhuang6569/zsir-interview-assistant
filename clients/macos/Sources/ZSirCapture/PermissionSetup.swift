@@ -112,5 +112,6 @@ final class PermissionSetup: ObservableObject {
     func openSettings(for permission: CapturePermission) {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(permission.settingsPane)")!
         settingsError = NSWorkspace.shared.open(url) ? nil : "未能打开系统设置，请按下方路径手动打开。"
+        if permission == .screen && settingsError == nil { PermissionGuide.shared.show() }
     }
 }

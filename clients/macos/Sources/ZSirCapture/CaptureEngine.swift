@@ -32,6 +32,9 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var activity: NSObjectProtocol?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var selection = DeviceSelection()
+    private var quality: RecordingQuality = .standard
+    private var systemAudio = true
+    private var displaySize: CGSize?
 
     private func releaseResources() {
         for (center, observer) in observers { center.removeObserver(observer) }
@@ -77,9 +80,11 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         }
     }
 
-    func start(in root: URL, mode: RecordingMode, selection: DeviceSelection) async throws -> URL {
+    func start(in root: URL, mode: RecordingMode, selection: DeviceSelection, quality: RecordingQuality = .standard, systemAudio: Bool = true) async throws -> URL {
         self.mode = mode
         self.selection = selection
+        self.quality = quality
+        self.systemAudio = systemAudio
         let capacity = try root.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
         guard (capacity.volumeAvailableCapacityForImportantUsage ?? 0) > 10_000_000_000 else {
             throw RecordingError("至少需要 10 GB 可用空间，请更换输出目录")
@@ -97,17 +102,17 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             let desktopBitRate = mode.includesDesktop ? try await prepareDesktop() : 0
             if mode.includesCamera { try await sessionWork { [self] in session.startRunning() } }
             if let stream { try await stream.startCapture() }
-            try TakeFiles.writeReport(["state": "recording", "mode": mode.rawValue,
+            try TakeFiles.writeReport(["state": "recording", "mode": mode.rawValue, "quality": quality.rawValue, "systemAudio": systemAudio,
                 "startedAt": ISO8601DateFormatter().string(from: Date()), "devices": devices], in: take)
             await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
                 mediaQueue.async { [self] in
                     let epoch = CMClockGetTime(CMClockGetHostTimeClock())
                     if mode.includesCamera {
                         cameraClock = session.synchronizationClock
-                        camera = MovieWriter(url: take.appendingPathComponent("camera.mp4"), epoch: epoch, videoBitRate: 8_000_000)
+                        camera = MovieWriter(url: take.appendingPathComponent("camera.mp4"), epoch: epoch, videoBitRate: quality.cameraBitRate)
                     }
                     if mode.includesDesktop {
-                        desktop = MovieWriter(url: take.appendingPathComponent("desktop.mp4"), epoch: epoch, videoBitRate: desktopBitRate)
+                        desktop = MovieWriter(url: take.appendingPathComponent("desktop.mp4"), epoch: epoch, videoBitRate: desktopBitRate, includesAudio: systemAudio)
                     }
                     accepting = true
                     startedAt = Date()
@@ -183,17 +188,18 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         let pixelScale = Double(filter.pointPixelScale)
         configuration.width = max(2, Int((filter.contentRect.width * pixelScale).rounded()) / 2 * 2)
         configuration.height = max(2, Int((filter.contentRect.height * pixelScale).rounded()) / 2 * 2)
-        let desktopBitRate = max(12_000_000, Int(12_000_000.0 * Double(configuration.width) * Double(configuration.height) / (1920 * 1080)))
+        let desktopBitRate = try quality.desktopBitRate(width: configuration.width, height: configuration.height)
+        displaySize = CGSize(width: CGDisplayPixelsWide(display.displayID), height: CGDisplayPixelsHigh(display.displayID))
         configuration.minimumFrameInterval = CMTime(value: 1, timescale: 30)
         configuration.queueDepth = 5
         configuration.pixelFormat = kCVPixelFormatType_32BGRA
-        configuration.capturesAudio = true
+        configuration.capturesAudio = systemAudio
         configuration.excludesCurrentProcessAudio = false
         configuration.sampleRate = 48_000
         configuration.channelCount = 2
         let screenStream = SCStream(filter: filter, configuration: configuration, delegate: self)
         try screenStream.addStreamOutput(self, type: .screen, sampleHandlerQueue: mediaQueue)
-        try screenStream.addStreamOutput(self, type: .audio, sampleHandlerQueue: mediaQueue)
+        if systemAudio { try screenStream.addStreamOutput(self, type: .audio, sampleHandlerQueue: mediaQueue) }
         stream = screenStream
         return desktopBitRate
     }
@@ -208,13 +214,17 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private func healthCheck() {
         guard accepting, let folder else { return }
         let writers = activeWriters
+        if mode.includesDesktop, let id = devices["displayID"] as? UInt32, let size = displaySize,
+           CGDisplayIsActive(id) == 0 || size != CGSize(width: CGDisplayPixelsWide(id), height: CGDisplayPixelsHigh(id)) {
+            fail("录制目标屏幕已断开或尺寸变化，正在保存已有素材"); return
+        }
         do {
             for (_, writer) in writers { try writer.checkHealth() }
             // A static screen still needs video timestamps to flush recoverable movie fragments.
             try desktop?.holdLastFrame(at: CMClockGetTime(CMClockGetHostTimeClock()))
         } catch { fail(error.localizedDescription); return }
         let seconds = ProcessInfo.processInfo.systemUptime - startedUptime
-        let ready = !writers.isEmpty && writers.allSatisfy { $0.1.videoSamples > 0 && $0.1.audioSamples > 0 }
+        let ready = !writers.isEmpty && writers.allSatisfy { $0.1.videoSamples > 0 && (!$0.1.includesAudio || $0.1.audioSamples > 0) }
         let status = "正在写入本机 · 丢帧 \(writers.reduce(0) { $0 + $1.1.droppedVideo })"
         DispatchQueue.main.async { [weak self] in self?.onUpdate?(status, ready, seconds) }
         if seconds > 12 && !ready {
@@ -314,7 +324,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 let group = DispatchGroup()
                 var issues = [captureError, stopIssue].compactMap { $0 }
                 for (name, writer) in writers {
-                    if writer.videoSamples == 0 || writer.audioSamples == 0 {
+                    if writer.videoSamples == 0 || (writer.includesAudio && writer.audioSamples == 0) {
                         issues.append("\(name) 未收到完整音视频")
                     }
                     group.enter()
@@ -329,6 +339,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                     let report: [String: Any] = [
                         "state": issues.isEmpty ? "finalized_unverified" : "needs_review",
                         "devices": devices, "mode": mode.rawValue, "errors": issues,
+                        "quality": quality.rawValue, "qualityVersion": 1, "systemAudio": systemAudio,
                         "durationSeconds": Date().timeIntervalSince(startedAt),
                         "tracks": Dictionary(uniqueKeysWithValues: writers.map { ($0.0, self.metrics($0.1)) }),
                         "note": "封装完成不代表实机验收通过；需听检、检查首尾、Final Cut Pro 导入和长时同步。"
@@ -347,7 +358,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private func metrics(_ writer: MovieWriter) -> [String: Any] {
         ["videoSamples": writer.videoSamples, "audioSamples": writer.audioSamples,
          "droppedVideo": writer.droppedVideo, "droppedAudio": writer.droppedAudio,
-         "width": writer.width, "height": writer.height, "targetVideoBitRate": writer.videoBitRate,
+         "includesAudio": writer.includesAudio, "width": writer.width, "height": writer.height, "targetVideoBitRate": writer.videoBitRate,
          "firstVideoSeconds": writer.firstVideoSeconds ?? -1, "lastVideoSeconds": writer.lastVideoSeconds,
          "lastAudioSeconds": writer.lastAudioSeconds]
     }

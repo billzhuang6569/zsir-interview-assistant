@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import RecordingCore
+import AVFoundation
 
 @MainActor
 final class CaptureModel: ObservableObject {
@@ -29,13 +30,34 @@ final class CaptureModel: ObservableObject {
     let desktopPreview = LivePreviewFeed()
     @Published var previewVisible = true
     @Published var settingsVisible = false
-    @Published var selection = DeviceSelection()
+    @Published var selection = DeviceSelection() {
+        didSet {
+            let d = permissions.defaults
+            d.set(selection.cameraID, forKey: "cameraID"); d.set(selection.microphoneID, forKey: "microphoneID")
+            if oldValue.displayID != selection.displayID, let uuid = CGDisplayCreateUUIDFromDisplayID(selection.displayID)?.takeRetainedValue() {
+                d.set(CFUUIDCreateString(nil, uuid) as String, forKey: "displayUUID")
+            }
+        }
+    }
+    @Published var quality: RecordingQuality = .standard { didSet { permissions.defaults.set(quality.rawValue, forKey: "recordingQuality") } }
+    @Published var systemAudio = true { didSet { permissions.defaults.set(systemAudio, forKey: "systemAudio") } }
+    @Published var autoRecovery = false { didSet { permissions.defaults.set(autoRecovery, forKey: "autoRecovery") } }
+    let settingsPreview = SettingsPreview()
+    private var deviceObservers: [NSObjectProtocol] = []
+    private var autoRecoveryAttempted = false
     @Published var cameras: [DeviceOption] = []
     @Published var microphones: [DeviceOption] = []
     @Published var displays: [DeviceOption] = []
     @Published var recoverable: [RecoveryCandidate] = []
 
     func refreshDevices() {
+        guard !busy else { return }
+        if selection.displayID == 0 {
+            if let value = permissions.defaults.string(forKey: "displayUUID"), let uuid = CFUUIDCreateFromString(nil, value as CFString) {
+                let id = CGDisplayGetDisplayIDFromUUID(uuid)
+                selection.displayID = id == 0 ? UInt32.max : id
+            } else { selection.displayID = CGMainDisplayID() }
+        }
         cameras = captureDeviceOptions(.video)
         microphones = captureDeviceOptions(.audio)
         displays = NSScreen.screens.compactMap { screen in
@@ -89,12 +111,45 @@ final class CaptureModel: ObservableObject {
 
     init(permissions: PermissionSetup) {
         self.permissions = permissions
+        quality = RecordingQuality(rawValue: permissions.defaults.string(forKey: "recordingQuality") ?? "") ?? .standard
+        systemAudio = permissions.defaults.object(forKey: "systemAudio") as? Bool ?? true
+        autoRecovery = permissions.defaults.bool(forKey: "autoRecovery")
+        selection = DeviceSelection(cameraID: permissions.defaults.string(forKey: "cameraID") ?? "", microphoneID: permissions.defaults.string(forKey: "microphoneID") ?? "")
         mode = RecordingMode(rawValue: permissions.defaults.string(forKey: "recordingMode") ?? "") ?? .both
         if let saved = permissions.defaults.string(forKey: "outputDirectory"), !saved.isEmpty {
             root = URL(fileURLWithPath: saved, isDirectory: true)
         } else {
             root = FileManager.default.urls(for: .moviesDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("ZSir Recordings", isDirectory: true)
+        }
+    }
+
+    func observeDevices() {
+        guard deviceObservers.isEmpty else { return }
+        for name in [NSApplication.didChangeScreenParametersNotification, AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification] {
+            deviceObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.refreshDevices() }
+            })
+        }
+        refreshDevices()
+    }
+
+    func recoverAutomaticallyIfNeeded() {
+        guard autoRecovery, !autoRecoveryAttempted, !busy else { return }
+        autoRecoveryAttempted = true
+        scanRecovery()
+        let candidates = recoverable
+        guard !candidates.isEmpty else { return }
+        busy = true; phase = "正在恢复素材…"
+        Task {
+            for candidate in candidates {
+                do {
+                    let result = try await RecordingRecovery.recover(candidate)
+                    lastTake = result.outputFolder
+                    if !result.errors.isEmpty { error = result.errors.joined(separator: "\n") }
+                } catch { self.error = error.localizedDescription }
+            }
+            busy = false; phase = "恢复检查完成"; detail = "原素材保留，请检查恢复副本"; scanRecovery()
         }
     }
 
@@ -109,11 +164,18 @@ final class CaptureModel: ObservableObject {
     }
 
     func start() {
-        guard !busy, !permissions.visible, permissions.requesting == nil else { return }
+        guard !busy, !settingsVisible, !permissions.visible, permissions.requesting == nil else { return }
         permissions.refresh(for: mode)
         guard permissions.ready(for: mode) else {
             permissions.present(for: mode, busy: busy)
             return
+        }
+        refreshDevices()
+        if mode.includesDesktop && !displays.contains(where: { $0.id == String(selection.displayID) }) {
+            error = "所选屏幕已断开，请在录制设置中重新选择"; return
+        }
+        if mode.includesCamera && ((!selection.cameraID.isEmpty && !cameras.contains(where: { $0.id == selection.cameraID })) || (!selection.microphoneID.isEmpty && !microphones.contains(where: { $0.id == selection.microphoneID }))) {
+            error = "所选摄像头或麦克风已断开，请重新选择"; return
         }
         generation += 1
         let currentGeneration = generation
@@ -145,11 +207,12 @@ final class CaptureModel: ObservableObject {
         Task {
             do {
                 try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-                lastTake = try await recorder.start(in: root, mode: mode, selection: selection)
+                await settingsPreview.stop()
+                lastTake = try await recorder.start(in: root, mode: mode, selection: selection, quality: quality, systemAudio: systemAudio)
                 canStop = true
                 if self.error != nil { stop(); return }
                 phase = "等待录制数据…"
-                detail = mode.includesDesktop ? "请播放系统声音，确认声音已采集" : "请对话筒讲话，确认声音已采集"
+                detail = mode.includesDesktop && systemAudio ? "请播放系统声音，确认声音已采集" : "请对话筒讲话，确认声音已采集"
             } catch {
                 phase = "未能开始"
                 detail = "检查权限与设备后重试"
@@ -237,6 +300,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.setFrame(frame, display: true)
         }
         edgeController = RecordingEdgeController(model: model, window: panel)
+        model.observeDevices()
+        model.recoverAutomaticallyIfNeeded()
+        if CommandLine.arguments.contains("--show-settings") { model.settingsVisible = true }
         NSApp.activate(ignoringOtherApps: true)
     }
 

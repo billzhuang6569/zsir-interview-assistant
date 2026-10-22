@@ -30,13 +30,13 @@ cat > "$APP_BUNDLE/Contents/Info.plist" <<'PLIST'
 <key>CFBundleDisplayName</key><string>庄Sir采访录制助手</string>
 <key>CFBundleIconFile</key><string>AppIcon</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.1.0</string>
+<key>CFBundleShortVersionString</key><string>0.2.0</string>
 <key>CFBundleVersion</key><string>2</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSPrincipalClass</key><string>NSApplication</string>
 <key>NSCameraUseContinuityCameraDeviceType</key><true/>
-<key>NSCameraUsageDescription</key><string>允许后，仅在你点击开始录制时采集摄像头画面，保存为本地采访素材。</string>
-<key>NSMicrophoneUsageDescription</key><string>允许后，仅在你点击开始录制时采集话筒声音，录入本地摄像头素材。</string>
+<key>NSCameraUsageDescription</key><string>用于设置页预览和录制摄像头画面；只有开始录制后才保存本地采访素材。</string>
+<key>NSMicrophoneUsageDescription</key><string>用于设置页麦克风电平检测和录制声音；只有开始录制后才保存本地采访素材。</string>
 </dict></plist>
 PLIST
 codesign --force --sign - "$APP_BUNDLE"
