@@ -1,3 +1,4 @@
+import RecordingCore
 import AppKit
 import SwiftUI
 
@@ -83,13 +84,13 @@ private struct PermissionGuideView: View {
                 Spacer()
                 Button { PermissionGuide.shared.close() } label: { Image(systemName: "xmark") }.buttonStyle(.plain).accessibilityLabel("关闭引导")
             }
-            Text("打开庄Sir采访录制助手的开关").font(.headline)
+            Text("打开\(RecordingCapabilities.applicationName)的开关").font(.headline)
             Text("如果没有出现，拖动这里").font(.subheadline)
             HStack(spacing: 12) {
                 Image(systemName: "arrow.left").foregroundStyle(.orange)
                 Image(nsImage: NSWorkspace.shared.icon(forFile: Bundle.main.bundleURL.path)).resizable().frame(width: 52, height: 52)
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("庄Sir采访录制助手").font(.subheadline)
+                    Text(RecordingCapabilities.applicationName).font(.subheadline)
                     Text("拖到系统设置的应用列表").font(.caption).foregroundStyle(.secondary)
                 }
             }.padding(12).frame(maxWidth: .infinity, alignment: .leading)
@@ -97,7 +98,7 @@ private struct PermissionGuideView: View {
                 .overlay(RoundedRectangle(cornerRadius: 12).stroke(.orange.opacity(0.8)))
                 .onDrag { NSItemProvider(object: Bundle.main.bundleURL as NSURL) }
                 .accessibilityLabel("拖动庄Sir采访录制助手应用到录屏权限列表")
-            Text("也可点列表下方的 +，选择此应用。开启后返回检测。").font(.caption).foregroundStyle(.secondary)
+            Text(RecordingCapabilities.macOS12Edition ? "在系统偏好设置中解锁后勾选本应用；若系统提示重新打开，请退出再启动。" : "也可点列表下方的 +，选择此应用。开启后返回检测。").font(.caption).foregroundStyle(.secondary)
             HStack { Spacer(); Button("返回应用检测") {
                 PermissionGuide.shared.close(); NSApp.activate(ignoringOtherApps: true)
             }.buttonStyle(RecordingAccentButtonStyle()) }

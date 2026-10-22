@@ -1,0 +1,91 @@
+{
+  "startedAt": "2026-10-22T04:46:01.1955787+00:00",
+  "productClient": true,
+  "microphoneOpened": false,
+  "missingToolsRejectedWithoutTake": true,
+  "previewLayoutPassed": true,
+  "dockedTimecode": "00:00:19",
+  "edgeDockAndRevealPassed": true,
+  "take": "Take-20261022-124601-e195ee90",
+  "media": {
+    "durationSeconds": 21.366667,
+    "bytes": 682898,
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 2560,
+        "height": 1440,
+        "duration": "21.366667"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2,
+        "duration": "21.366667"
+      }
+    ]
+  },
+  "audioPackets": 198,
+  "audioToneStartsSeconds": [
+    5.26,
+    10.23,
+    15.24
+  ],
+  "videoFlashStartsSeconds": [
+    5.2,
+    10.2,
+    15.2
+  ],
+  "audioMinusVideoSeconds": [
+    0.05999999999999961,
+    0.030000000000001137,
+    0.040000000000000924
+  ],
+  "fullDecodePassed": true,
+  "stopRestoresWindow": true,
+  "secondTake": "Take-20261022-124625-e48ebf68",
+  "secondMedia": {
+    "durationSeconds": 18.333333,
+    "bytes": 461202,
+    "streams": [
+      {
+        "codec_name": "h264",
+        "codec_type": "video",
+        "width": 2560,
+        "height": 1440,
+        "duration": "18.333333"
+      },
+      {
+        "codec_name": "aac",
+        "codec_type": "audio",
+        "sample_rate": "48000",
+        "channels": 2,
+        "duration": "18.333333"
+      }
+    ]
+  },
+  "missingDeviceRejected": true,
+  "interruptedTake": "Take-20261022-124644-006f2f61",
+  "interruptedVideoReadable": true,
+  "encoderInterruptionHandled": true,
+  "audioFileChecksPassed": true,
+  "state": "passed",
+  "finishedAt": "2026-10-22T04:47:03.1295661+00:00",
+  "platform": "Windows 11 x64 10.0.26200; interactive console session 1, limited privileges",
+  "packageSHA256": "e03bf7ee4daf672d01823f562b8dc0f33e4696a7318aff3e40744966955fefd0",
+  "packageBytes": 147905126,
+  "extractedPathContainsChineseAndSpaces": true,
+  "restrictedPATH": true,
+  "bundledToolsHashesVerified": true,
+  "invalidArchiveRejected": true,
+  "limitations": [
+    "Not a clean OS image; PATH restricted and bundled executables used",
+    "Network remained enabled for Tailscale; no user-time tool download required",
+    "No camera/microphone feature in Windows client; no camera detected",
+    "No ARM64 physical capture validation",
+    "No 30-minute/long recording or physical multi-monitor hotplug test",
+    "No public release; complete corresponding source/build materials for static FFmpeg dependencies still to be prepared"
+  ]
+}

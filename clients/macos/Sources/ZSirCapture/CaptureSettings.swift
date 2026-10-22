@@ -36,6 +36,7 @@ struct CaptureSettings: View {
     }
     private var advancedSettings: some View {
         VStack(alignment: .leading, spacing: 18) {
+            if !RecordingCapabilities.macOS12Edition { UpdateSettings(updates: model.updates); Divider() }
             Text("一般不需要改动，默认值已按采访录制调好。").font(.caption).foregroundStyle(.secondary)
             HStack { VStack(alignment: .leading) { Text("保存位置"); Text(model.root.path).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("更改…") { model.chooseFolder() } }
             Divider()
@@ -130,6 +131,9 @@ private struct SettingsSources: View {
     private var desktopCard: some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack { Label("桌面画面", systemImage: "desktopcomputer").font(.headline); Spacer(); badge(screenAllowed ? "选择录制目标" : "需要屏幕录制权限", ready: screenAllowed) }
+            if !RecordingCapabilities.systemAudio {
+                Text("macOS 12 兼容版：桌面仅录画面，不录系统播放声音。").font(.caption).foregroundStyle(.orange)
+            }
             if screenAllowed {
                 ScrollView(.horizontal) {
                     HStack(spacing: 14) {
@@ -153,14 +157,14 @@ private struct SettingsSources: View {
                 if !model.displays.contains(where: { $0.id == String(model.selection.displayID) }) { Text("原目标屏幕已断开，请重新选择；不会自动录制其他屏幕。").font(.caption).foregroundStyle(.orange) }
                 if let error = preview.screenError { Text(error).font(.caption).foregroundStyle(.orange) }
                 HStack {
-                    VStack(alignment: .leading, spacing: 4) { Text("同时录下电脑里播放的声音"); Text("视频、音乐、通话对方的声音都会被录进桌面视频").font(.caption).foregroundStyle(.secondary) }
-                    Spacer(); Toggle("录制系统声音", isOn: $model.systemAudio).labelsHidden().toggleStyle(.switch).tint(accent)
+                    VStack(alignment: .leading, spacing: 4) { Text("同时录下电脑里播放的声音"); Text(RecordingCapabilities.systemAudio ? "视频、音乐、通话对方的声音都会被录进桌面视频" : "兼容版不支持系统声音；桌面视频无声音，摄像头仍可录话筒").font(.caption).foregroundStyle(.secondary) }
+                    Spacer(); Toggle("录制系统声音", isOn: $model.systemAudio).labelsHidden().toggleStyle(.switch).tint(accent).disabled(!RecordingCapabilities.systemAudio)
                 }.padding(12).background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 10))
             } else {
                 VStack(spacing: 14) {
                     Image(systemName: "lock").font(.title).foregroundStyle(.orange)
                     Text("系统还没允许我们录制你的屏幕").fontWeight(.medium)
-                    Text("开启「庄Sir采访录制助手」的开关后返回检测。").font(.caption).foregroundStyle(.secondary)
+                    Text("开启「\(RecordingCapabilities.applicationName)」的开关后返回检测。").font(.caption).foregroundStyle(.secondary)
                     HStack { Button("打开系统设置") { model.permissions.openSettings(for: .screen) }.buttonStyle(RecordingAccentButtonStyle()); Button("我已允许，重新检测") { permissionRevision += 1 } }
                 }.frame(maxWidth: .infinity).padding(24).background(.black.opacity(0.2), in: RoundedRectangle(cornerRadius: 12))
             }

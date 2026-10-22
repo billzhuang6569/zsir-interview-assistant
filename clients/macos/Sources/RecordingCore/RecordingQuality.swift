@@ -13,3 +13,18 @@ public enum RecordingQuality: String, CaseIterable, Identifiable, Sendable {
         return Int(rate)
     }
 }
+
+public enum RecordingCapabilities {
+    public static var macOS12Edition: Bool {
+        #if ZSIR_MACOS12_COMPAT
+        return true
+        #else
+        return false
+        #endif
+    }
+    public static var applicationName: String { macOS12Edition ? "庄Sir采访录制助手（macOS12兼容版）" : "庄Sir采访录制助手" }
+    public static var systemAudio: Bool {
+        if #available(macOS 13, *) { return !macOS12Edition }
+        return false
+    }
+}

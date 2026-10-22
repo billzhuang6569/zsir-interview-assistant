@@ -117,7 +117,17 @@ public enum RecordingRecovery {
         }
         let generator = AVAssetImageGenerator(asset: asset)
         generator.maximumSize = CGSize(width: 320, height: 180)
-        _ = try await generator.image(at: .zero)
-        _ = try await generator.image(at: CMTime(seconds: max(0, duration.seconds - 0.1), preferredTimescale: 600))
+        for time in [CMTime.zero, CMTime(seconds: max(0, duration.seconds - 0.1), preferredTimescale: 600)] {
+            if #available(macOS 13, *), !RecordingCapabilities.macOS12Edition {
+                _ = try await generator.image(at: time)
+            } else {
+                try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+                    generator.generateCGImagesAsynchronously(forTimes: [NSValue(time: time)]) { _, image, _, result, error in
+                        if result == .succeeded, image != nil { c.resume() }
+                        else { c.resume(throwing: error ?? RecordingError("无法解码恢复副本，原文件仍保留")) }
+                    }
+                }
+            }
+        }
     }
 }

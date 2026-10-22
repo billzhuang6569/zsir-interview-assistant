@@ -19,6 +19,7 @@ final class CaptureModel: ObservableObject {
         didSet { UserDefaults.standard.set(root.path, forKey: "outputDirectory") }
     }
     @Published var lastTake: URL?
+    let updates = Updates()
     let permissions: PermissionSetup
     @Published var mode: RecordingMode = .both {
         didSet {
@@ -40,7 +41,12 @@ final class CaptureModel: ObservableObject {
         }
     }
     @Published var quality: RecordingQuality = .standard { didSet { permissions.defaults.set(quality.rawValue, forKey: "recordingQuality") } }
-    @Published var systemAudio = true { didSet { permissions.defaults.set(systemAudio, forKey: "systemAudio") } }
+    @Published var systemAudio = RecordingCapabilities.systemAudio {
+        didSet {
+            if !RecordingCapabilities.systemAudio && systemAudio { systemAudio = false }
+            permissions.defaults.set(systemAudio, forKey: "systemAudio")
+        }
+    }
     @Published var autoRecovery = false { didSet { permissions.defaults.set(autoRecovery, forKey: "autoRecovery") } }
     let settingsPreview = SettingsPreview()
     private var deviceObservers: [NSObjectProtocol] = []
@@ -112,7 +118,7 @@ final class CaptureModel: ObservableObject {
     init(permissions: PermissionSetup) {
         self.permissions = permissions
         quality = RecordingQuality(rawValue: permissions.defaults.string(forKey: "recordingQuality") ?? "") ?? .standard
-        systemAudio = permissions.defaults.object(forKey: "systemAudio") as? Bool ?? true
+        systemAudio = RecordingCapabilities.systemAudio && (permissions.defaults.object(forKey: "systemAudio") as? Bool ?? true)
         autoRecovery = permissions.defaults.bool(forKey: "autoRecovery")
         selection = DeviceSelection(cameraID: permissions.defaults.string(forKey: "cameraID") ?? "", microphoneID: permissions.defaults.string(forKey: "microphoneID") ?? "")
         mode = RecordingMode(rawValue: permissions.defaults.string(forKey: "recordingMode") ?? "") ?? .both
@@ -212,7 +218,7 @@ final class CaptureModel: ObservableObject {
                 canStop = true
                 if self.error != nil { stop(); return }
                 phase = "等待录制数据…"
-                detail = mode.includesDesktop && systemAudio ? "请播放系统声音，确认声音已采集" : "请对话筒讲话，确认声音已采集"
+                detail = mode.includesDesktop && systemAudio ? "请播放系统声音，确认声音已采集" : (mode.includesCamera ? "请对话筒讲话，确认声音已采集" : "桌面仅录画面，不含声音")
             } catch {
                 phase = "未能开始"
                 detail = "检查权限与设备后重试"
@@ -256,6 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = CaptureModel()
     var window: NSWindow?
     var edgeController: RecordingEdgeController?
+    var updateTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -271,7 +278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = menu
         let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 336, height: 300),
                              styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
-        panel.title = "庄Sir采访录制助手"
+        panel.title = RecordingCapabilities.applicationName
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isOpaque = false
@@ -283,7 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
         let hosting = NSHostingView(rootView: CaptureView(model: model))
-        hosting.sizingOptions = []
+        if #available(macOS 13, *) { hosting.sizingOptions = [] }
         panel.contentView = hosting
         if let frame = NSScreen.main?.visibleFrame {
             panel.setFrameTopLeftPoint(NSPoint(x: frame.maxX - panel.frame.width - 16, y: frame.maxY - 16))
@@ -302,6 +309,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         edgeController = RecordingEdgeController(model: model, window: panel)
         model.observeDevices()
         model.recoverAutomaticallyIfNeeded()
+        model.updates.busy = { [weak model] in model?.busy != false }
+        model.updates.start()
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let window = self.window, !self.model.permissions.visible, !self.model.settingsVisible else { return }
+                self.model.updates.promptIfNeeded(window: window)
+            }
+        }
         if CommandLine.arguments.contains("--show-settings") { model.settingsVisible = true }
         NSApp.activate(ignoringOtherApps: true)
     }
@@ -327,6 +342,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 enum CaptureApp {
     @MainActor static func main() {
         let app = NSApplication.shared
+        if CommandLine.arguments.contains("--check-updates") {
+            Task { do { try await UpdateChecks.run(); exit(0) } catch { print("FAIL updates: \(error)"); exit(1) } }
+            app.run(); return
+        }
         if CommandLine.arguments.contains("--check-recording-ui") { RecordingPresentationChecks.run(); return }
         if CommandLine.arguments.contains("--check-permissions") {
             Task { await PermissionSetupChecks.run(); exit(0) }

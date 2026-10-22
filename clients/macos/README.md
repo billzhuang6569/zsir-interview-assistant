@@ -5,8 +5,8 @@
 ## 当前使用条件
 
 - 用户采访通常超过 1 小时，优先内置摄像头/话筒，后期主要使用 Final Cut Pro。
-- Windows 实机已通过 Tailscale 连通，尚无 Windows 产品客户端；常用会议软件待确认。
-- 编译最低目标 macOS 14；当前仅在 macOS 26.6.2 / Apple Silicon / Swift 6.3 命令行工具环境构建，不代表已支持所有 macOS 14+ 设备。
+- Windows 客户端已提供桌面与系统声音录制；摄像头与麦克风尚未实现。
+- v0.3.0 完整版最低构建目标为 macOS 13.0，独立兼容版为12.3；当前在 macOS 26.6.2 / Apple Silicon 构建。macOS12/13真机尚未验收，边界见根目录README与测试记录。
 - 默认使用系统摄像头、话筒、主显示器，也可在设置中指定设备。报告记录实际设备名称；这不保证默认设备一定是内置设备。
 
 ## 构建与启动
@@ -49,7 +49,7 @@ swift run --package-path clients/macos CaptureChecks
 - AVFoundation：摄像头＋话筒；ScreenCaptureKit：桌面＋完整系统播放声音，无会议声音过滤，无主动话筒混入。
 - 摄像头优先 1080p；不支持时使用设备高质量预设，报告实际尺寸。桌面按 ScreenCaptureKit 内容点尺寸乘像素倍率采集，保留 Retina 像素，仅对齐偶数尺寸，目标 30 fps。两个文件均 H.264 / AAC；摄像头为 8 Mbps，桌面按像素数同比增加目标码率（最低 12 Mbps，4K 为 48 Mbps）。4K 桌面加摄像头每小时粗略预算约 25 GB，实际码率、负载与清晰度需实测。报告记录实际尺寸及目标码率；不支持高分辨率编码时明确报错，不静默降为 1080p。
 - 相机样本从会话同步时钟映射到 host clock；两路以同一 epoch 写入。设备时钟漂移及长时间音画同步尚需实测。
-- 首片目标 1 秒、后续目标 10 秒的 MP4 fragment，正常停止完成封装；实际落盘受编码器/关键帧影响。设置面板可恢复已落盘片段，不保证强杀后完整恢复。
+- macOS 14+ 首片目标 1 秒、后续目标 10 秒；macOS 13 因无首片独立间隔接口，统一目标 1 秒的 MP4 fragment，正常停止完成封装；实际落盘受编码器/关键帧影响。设置面板可恢复已落盘片段，不保证强杀后完整恢复。
 - 本工具窗口通过屏幕流的应用过滤排除；不承诺其他会议软件的共享画面也能排除它。
 - 实时写入来不及时计数并丢弃该样本，不积累无限队列；丢音频也会记录在报告中。摄像头连续 8 秒无新帧、屏幕流报错、写入错误或剩余空间不足 2 GB 时停止保存。
 - 暂无音量表、倒计时和独立录制进程；恢复需要用户主动点击；这是 P0 采集工程，不能替代已设计的完整嘉宾端。
@@ -96,3 +96,15 @@ BUILD_ARCH=x86_64 ./script/package-macos.sh
 ## 权限流程自检
 
 `swift run --package-path clients/macos ZSirCapture --check-permissions` 使用隔离 UserDefaults 与模拟权限回调，验证机位映射、拒绝/受限、串行请求、迟到回调、跳过续接、完成后撤权、方式持久化及开始前阻止采集。不重置系统隐私权限、不访问设备；不替代真实 TCC 验收。主界面已将「双路」改为「摄像头+桌面」，移除初始隐私文案及空白行，保留动态录制提示。
+
+### macOS 13 适配开发检查
+
+通过 `APP_BUNDLE=/绝对路径/Compat.app BUILD_ARCH=arm64 ./script/build_and_run.sh --build-only` 构建隔离开发包；Intel 使用 `BUILD_ARCH=x86_64`。不替换已运行应用或正式安装。
+
+包内可执行文件的 `--check-permissions` 同时运行旧版尺寸与缩略图完成/取消/超时检查；`--check-recording-ui` 检查窗口与权限浮窗位置。当前系统上 availability 分支仍走新版 API，不能替代 macOS 13 实测。
+
+## v0.3.0 兼容包与更新检测
+
+版本统一读取根目录VERSION。两种架构均可用 `MACOS12_COMPAT=1 BUILD_ARCH=arm64 ./script/package-macos.sh`（Intel改为x86_64）生成独立兼容包。兼容版使用不同应用名与Bundle ID，在任何系统上均不录桌面声音，也不启用更新检测。
+
+完整版高级设置提供自动/手动版本检查和自定义HTTPS来源。运行包内程序 `--check-updates` 验证版本、版别、架构、网络错误、缓存和忙碌状态；网络模拟检查不等于真实服务器验收。部署说明见 [静态更新源](../../docs/milestones/update-server-deployment.md)。

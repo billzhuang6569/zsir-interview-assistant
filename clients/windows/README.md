@@ -12,7 +12,7 @@ dotnet build clients/windows/ZSirCapture.Windows.csproj -c Release
 
 将受信任的 `ffmpeg.exe`、`ffprobe.exe` 放在生成目录 `tools/` 下，再运行 `ZSirCapture.Windows.exe`。开发测试使用此前校验的 FFmpeg 9.0.2 gyan.dev 构建；默认 libx264 软件编码，避免已发现的 NVENC API / 显卡驱动不兼容。
 
-FFmpeg 不提交到仓库、不在应用启动时下载。本项目自有代码使用仓库 MIT 许可证；FFmpeg/libx264 的许可证独立适用。发布预览包自带 .NET 运行环境及许可声明，不包含 FFmpeg。解压后运行 `Install-RecordingTools.cmd`，从上游下载固定版本并校验 SHA-256；后续离线录制。应用尚未签名。详见[发布说明](../../docs/releases/0.1.0-preview.1.md)。
+FFmpeg不提交二进制到仓库、不在应用启动时下载。`script/build-windows-tools.sh`从固定FFmpeg/x264源码交叉构建精简x64工具和完整源码包；`script/package-windows.ps1`校验工具压缩包哈希后内置组件，实际编码/探测/解码通过才出包。最终用户完整解压即可离线录制。包内附FFmpeg/x264许可证，Release附源码和构建脚本。见[来源说明](RECORDING-TOOLS.md)。应用尚未签名。
 
 ## 录制与保存
 
@@ -48,8 +48,12 @@ FFmpeg 不提交到仓库、不在应用启动时下载。本项目自有代码�
 ## 按架构打包
 
 ```powershell
-.\script\package-windows.ps1 -Architecture x64
-.\script\package-windows.ps1 -Architecture arm64
+.\script\package-windows.ps1 -Architecture x64 -ToolsArchive C:\build\recording-tools-win-x64.zip
+.\script\package-windows.ps1 -Architecture arm64 -ToolsArchive C:\build\recording-tools-win-x64.zip
 ```
 
 从仓库根目录运行，输出到 `dist/release/`，目标目录已存在时拒绝覆盖。包自带对应架构的 .NET 运行时及许可。ARM64 包要求 Windows 11 ARM64，应用为原生 ARM64；当前固定版本 FFmpeg/ffprobe 为 x64，依赖系统仿真，尚非全链路原生 ARM 编码。
+
+构建工具链：macOS安装mingw-w64、nasm、pkgconf后运行 `script/build-windows-tools.sh`，产物位于终端打印的构建目录。源码包与六包一起发布。正式打包核对仓库固定哈希，不能随意接受未经审核的二进制。
+
+长录验收：在交互式桌面设置 `ZSIR_SMOKE_SECONDS=1800` 后运行原 `--smoke-test 新目录`，测试音和闪光分布于开头/中段/结尾。测试不修改用户录制设置，不打开摄像头或话筒。默认仍为短录。

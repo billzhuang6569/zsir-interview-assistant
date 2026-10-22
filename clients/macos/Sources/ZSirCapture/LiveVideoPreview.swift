@@ -1,3 +1,4 @@
+import RecordingCore
 import AppKit
 import AVFoundation
 import SwiftUI
@@ -64,11 +65,17 @@ final class VideoSurfaceView: NSView {
 
     func display(_ sample: CMSampleBuffer) {
         guard lastSample !== sample else { return }
-        let renderer = videoLayer.sampleBufferRenderer
-        if renderer.status == .failed { renderer.flush() }
         // A slow preview drops frames instead of building latency or blocking capture.
-        guard renderer.isReadyForMoreMediaData else { return }
-        renderer.enqueue(sample)
+        if #available(macOS 14, *), !RecordingCapabilities.macOS12Edition {
+            let renderer = videoLayer.sampleBufferRenderer
+            if renderer.status == .failed { renderer.flush() }
+            guard renderer.isReadyForMoreMediaData else { return }
+            renderer.enqueue(sample)
+        } else {
+            if videoLayer.status == .failed { videoLayer.flush() }
+            guard videoLayer.isReadyForMoreMediaData else { return }
+            videoLayer.enqueue(sample)
+        }
         lastSample = sample
     }
 }

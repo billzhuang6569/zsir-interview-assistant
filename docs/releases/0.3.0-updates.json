@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "releases": [
+    {
+      "version": "0.3.0",
+      "publishedAt": "2026-10-22T05:09:59.715519+00:00",
+      "summary": "Mac完整版自动检测更新；macOS13兼容及12.3独立兼容包；Windows内置录制组件，解压即用。",
+      "releaseURL": "https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.3.0",
+      "assets": [
+        {
+          "os": "macos",
+          "arch": "arm64",
+          "edition": "standard",
+          "minOS": "13.0",
+          "url": "https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.3.0/ZSirCapture-0.3.0-macos-arm64.zip",
+          "size": 2411550,
+          "sha256": "8d8efe710a77bbeeec9071467dbb5e1f0ce40f70be4503e54439946dcc45344d"
+        },
+        {
+          "os": "macos",
+          "arch": "x86_64",
+          "edition": "standard",
+          "minOS": "13.0",
+          "url": "https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.3.0/ZSirCapture-0.3.0-macos-x86_64.zip",
+          "size": 2438143,
+          "sha256": "3974ad8cb680251650633009d9cc9e5fc42580a79c8a3ec47b47850ce3b5f0ef"
+        },
+        {
+          "os": "macos",
+          "arch": "arm64",
+          "edition": "monterey",
+          "minOS": "12.3",
+          "url": "https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.3.0/ZSirCapture-0.3.0-macos12-arm64.zip",
+          "size": 2408039,
+          "sha256": "31b71d359bece82e3398ec6b3ecc9a2b4d362b73c26ed53c8a61c12b0f0ca943"
+        },
+        {
+          "os": "macos",
+          "arch": "x86_64",
+          "edition": "monterey",
+          "minOS": "12.3",
+          "url": "https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.3.0/ZSirCapture-0.3.0-macos12-x86_64.zip",
+          "size": 2432689,
+          "sha256": "e2140cfeb9e3316f98e6095d4742bbc0679cde3bb1ffdbc706be2264b7e7c750"
+        },
+        {
+          "os": "windows",
+          "arch": "x86_64",
+          "edition": "standard",
+          "minOS": "10.0.19041",
+          "url": "https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.3.0/ZSirCapture-0.3.0-windows-x64.zip",
+          "size": 77618800,
+          "sha256": "2bbefaa77d6f84a3d2db53feded84439e02b71348adc705fab66033fda7797f0"
+        },
+        {
+          "os": "windows",
+          "arch": "arm64",
+          "edition": "standard",
+          "minOS": "10.0.22000",
+          "url": "https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.3.0/ZSirCapture-0.3.0-windows-arm64.zip",
+          "size": 73363953,
+          "sha256": "a0055cd25a7807c676ba8c0e87f3de5a2d9839dde9c8cebf530ef4d1c8212530"
+        }
+      ]
+    }
+  ]
+}
