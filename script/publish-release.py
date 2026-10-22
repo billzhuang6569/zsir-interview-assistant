@@ -33,7 +33,9 @@ repo = 'billzhuang6569/zsir-interview-assistant'
 subprocess.run(['gh', 'release', 'create', tag, *map(str, assets), '--repo', repo, '--verify-tag', '--draft',
                 '--title', f'庄Sir采访录制助手 {tag} · Mac / Windows 六包',
                 '--notes-file', str(ROOT / f'docs/releases/{version}.md')], check=True)
-release = json.loads(subprocess.check_output(['gh', 'api', f'repos/{repo}/releases/tags/{tag}']))
+# Draft releases may return 404 from the by-tag endpoint; the authenticated list includes them.
+pages = json.loads(subprocess.check_output(['gh', 'api', '--paginate', '--slurp', f'repos/{repo}/releases']))
+release = next(r for page in pages for r in page if r['tag_name'] == tag and r['draft'])
 remote = {asset['name']: asset for asset in release['assets']}
 assert set(remote) == {p.name for p in assets}, 'Uploaded asset set differs; release stays draft'
 for path in assets:
@@ -41,4 +43,4 @@ for path in assets:
     assert actual['size'] == path.stat().st_size
     assert actual['digest'] == 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest(), path.name
 subprocess.run(['gh', 'release', 'edit', tag, '--repo', repo, '--draft=false', '--latest'], check=True)
-print(release['html_url'])
+print(f'https://github.com/{repo}/releases/tag/{tag}')
