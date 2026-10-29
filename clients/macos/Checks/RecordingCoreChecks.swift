@@ -1,4 +1,5 @@
 import AVFoundation
+import VideoToolbox
 import RecordingCore
 import Darwin
 
@@ -679,8 +680,68 @@ func unwrap<T>(_ value: T?) throws -> T {
     return value
 }
 @main struct RunChecks {
+    /// Exit 78 means explicitly unsupported hardware, never a successful test.
+    /// Invalid-session, resource-busy and all other unexpected errors still fail.
+    static func hardwareEncoderPreflight() -> Int32 {
+        var evidence: [String: Any] = ["scope": "H264 hardware-required 1920x1080 VT session preflight; no device capture", "hardwareRequired": true]
+        func finish(_ result: String, reason: String, code: Int32) -> Int32 {
+            evidence["result"] = result; evidence["reason"] = reason
+            if let data = try? JSONSerialization.data(withJSONObject: evidence, options: [.prettyPrinted, .sortedKeys]),
+               let text = String(data: data, encoding: .utf8) { print(text) }
+            return code
+        }
+        var list: CFArray?
+        let listStatus = VTCopyVideoEncoderList(nil, &list)
+        evidence["encoderListStatus"] = listStatus
+        guard listStatus == noErr, let entries = list as? [[String: Any]] else {
+            return finish("FAIL", reason: "Encoder enumeration failed; unsupported hardware is not established", code: 1)
+        }
+        let h264 = entries.filter { ($0[kVTVideoEncoderList_CodecType as String] as? NSNumber)?.uint32Value == kCMVideoCodecType_H264 }
+        evidence["h264Encoders"] = h264.map { item in
+            ["id": item[kVTVideoEncoderList_EncoderID as String] ?? "unknown",
+             "hardware": item[kVTVideoEncoderList_IsHardwareAccelerated as String] ?? "unknown"]
+        }
+        if h264.isEmpty || h264.allSatisfy({ ($0[kVTVideoEncoderList_IsHardwareAccelerated as String] as? Bool) == false }) {
+            return finish("SKIP", reason: "Successful VT enumeration exposes no hardware H264 encoder; synthetic hardware-encoding suite not run", code: 78)
+        }
+        var session: VTCompressionSession?
+        let specification = [kVTVideoEncoderSpecification_EnableHardwareAcceleratedVideoEncoder as String: true,
+                             kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: true] as CFDictionary
+        let createStatus = VTCompressionSessionCreate(allocator: kCFAllocatorDefault, width: 1920, height: 1080,
+            codecType: kCMVideoCodecType_H264, encoderSpecification: specification,
+            imageBufferAttributes: nil, compressedDataAllocator: nil,
+            outputCallback: { _, _, _, _, _ in }, refcon: nil, compressionSessionOut: &session)
+        evidence["createStatus"] = createStatus
+        if createStatus == kVTCouldNotFindVideoEncoderErr {
+            return finish("SKIP", reason: "RequireHardware H264 session returned kVTCouldNotFindVideoEncoderErr (-12908)", code: 78)
+        }
+        guard createStatus == noErr, let session else {
+            return finish("FAIL", reason: "Unexpected hardware-session creation error; invalid-session (-12903) and temporary unavailability are not skips", code: 1)
+        }
+        defer { VTCompressionSessionInvalidate(session) }
+        let prepareStatus = VTCompressionSessionPrepareToEncodeFrames(session)
+        evidence["prepareStatus"] = prepareStatus
+        if prepareStatus == kVTCouldNotFindVideoEncoderErr {
+            return finish("SKIP", reason: "Hardware session preparation returned kVTCouldNotFindVideoEncoderErr (-12908)", code: 78)
+        }
+        guard prepareStatus == noErr else {
+            return finish("FAIL", reason: "Unexpected hardware-session preparation error", code: 1)
+        }
+        var hardware: Unmanaged<CFBoolean>?
+        let propertyStatus = VTSessionCopyProperty(session, key: kVTCompressionPropertyKey_UsingHardwareAcceleratedVideoEncoder,
+            allocator: kCFAllocatorDefault, valueOut: &hardware)
+        evidence["hardwarePropertyStatus"] = propertyStatus
+        let usingHardware = hardware.map { CFBooleanGetValue($0.takeRetainedValue()) } ?? false
+        evidence["usingHardwareEncoder"] = usingHardware
+        guard propertyStatus == noErr, usingHardware else {
+            return finish("FAIL", reason: "RequireHardware session did not confirm hardware acceleration", code: 1)
+        }
+        return finish("AVAILABLE", reason: "Hardware-required H264 session prepared; run full synthetic suite", code: 0)
+    }
+
     static func main() async throws {
         setbuf(stdout, nil)
+        if CommandLine.arguments.contains("--hardware-preflight") { exit(hardwareEncoderPreflight()) }
         let checks = RecordingCoreChecks()
         if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--crash-fixture" {
             try await checks.crashFixture(folder: URL(fileURLWithPath: CommandLine.arguments[2]))

@@ -57,7 +57,25 @@ jobs:
           if [[ '${{ matrix.compat }}' == '1' ]]; then
             options+=(-Xswiftc -DZSIR_MACOS12_COMPAT)
           fi
-          swift run "${options[@]}" CaptureChecks 2>&1 | tee "$TEST_OUTPUT/logs/capture-checks.log"
+          set +e
+          swift run "${options[@]}" CaptureChecks --hardware-preflight 2>&1 | tee "$TEST_OUTPUT/logs/hardware-preflight.log"
+          preflight_status=${PIPESTATUS[0]}
+          set -e
+          case "$preflight_status" in
+            0)
+              swift run "${options[@]}" CaptureChecks 2>&1 | tee "$TEST_OUTPUT/logs/capture-checks.log"
+              echo "CaptureChecks hardware suite: PASS" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            78)
+              echo "SKIP: CaptureChecks hardware-encoding suite unsupported on this runner; compilation and portable contract checks still required." | tee "$TEST_OUTPUT/logs/capture-checks.log"
+              echo "::warning::Hardware-encoding CaptureChecks SKIPPED; see hardware-preflight.log. This is not a recording validation pass."
+              echo "CaptureChecks hardware suite: SKIPPED (explicit preflight capability result); not passed." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::Hardware preflight failed unexpectedly (exit $preflight_status); refusing to skip."
+              exit "$preflight_status"
+              ;;
+          esac
       - name: Run portable Swift contract checks
         run: |
           set -euo pipefail
