@@ -136,9 +136,9 @@ jobs:
       - name: Run Python and actual RecordingOptions checks
         run: |
           set -euo pipefail
-          mkdir -p validation-logs /workspace/scratch/recording-options-ci
+          mkdir -p validation-logs "$RUNNER_TEMP/recording-options-ci"
           python3 -m unittest discover -s script/tests -v 2>&1 | tee validation-logs/python-tests.log
-          XDG_DATA_HOME=/workspace/scratch/recording-options-ci dotnet run --project script/tests/RecordingOptionsChecks/RecordingOptionsChecks.csproj 2>&1 | tee validation-logs/options-checks.log
+          XDG_DATA_HOME="$RUNNER_TEMP/recording-options-ci" dotnet run --project script/tests/RecordingOptionsChecks/RecordingOptionsChecks.csproj 2>&1 | tee validation-logs/options-checks.log
       - name: Install synthetic fixture encoder
         run: |
           set -euo pipefail

@@ -6,10 +6,14 @@ static void Check(bool value, string description)
 }
 // Run with XDG_DATA_HOME set to a throwaway directory; never alter user settings.
 var root = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
-Check(!string.IsNullOrEmpty(root) && root.StartsWith("/workspace/scratch/"), "Set XDG_DATA_HOME to an isolated /workspace/scratch directory");
+Check(!string.IsNullOrEmpty(root) && Path.IsPathFullyQualified(root), "Set XDG_DATA_HOME to an absolute temporary directory");
+root = Path.Combine(Path.GetFullPath(root!), "zsir-options-check-" + Guid.NewGuid().ToString("N"));
+Directory.CreateDirectory(root);
+Environment.SetEnvironmentVariable("XDG_DATA_HOME", root);
+Check(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) == root, "This harness requires Linux XDG isolation");
 var settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ZSirCapture", "recording-settings.json");
 Directory.CreateDirectory(Path.GetDirectoryName(settings)!);
-if (File.Exists(settings)) File.Delete(settings);
+Check(!File.Exists(settings), "unique test directory must not contain existing settings");
 Check(RecordingOptions.Load().OutputProfile == "balanced", "fresh install defaults balanced");
 File.WriteAllText(settings, "{\"Quality\":\"high\",\"SystemAudio\":false}");
 var migrated = RecordingOptions.Load();
@@ -42,4 +46,5 @@ foreach (var size in new[] { (0, 100), (100, 1), (32769, 100) })
 }
 try { RecordingOptions.BitRate("high", 32768, 32768); throw new Exception("overflowing bitrate accepted"); }
 catch (ArgumentOutOfRangeException) { }
+Directory.Delete(root, recursive: true);
 Console.WriteLine("PASS: profiles, portrait/ultrawide sizing, even pixels, bitrate, migration, persistence, invalid inputs");
