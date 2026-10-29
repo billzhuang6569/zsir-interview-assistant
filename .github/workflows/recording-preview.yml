@@ -26,8 +26,6 @@ jobs:
           - edition: macos12-compat
             compat: '1'
             minimum: '12.3'
-    env:
-      TEST_OUTPUT: ${{ runner.temp }}/recording-preview-${{ matrix.edition }}
     defaults:
       run:
         shell: bash
@@ -38,6 +36,8 @@ jobs:
       - name: Record native toolchain
         run: |
           set -euo pipefail
+          TEST_OUTPUT="$RUNNER_TEMP/recording-preview-${{ matrix.edition }}"
+          echo "TEST_OUTPUT=$TEST_OUTPUT" >> "$GITHUB_ENV"
           mkdir -p "$TEST_OUTPUT/logs"
           { sw_vers; uname -m; xcodebuild -version; swift --version; git rev-parse HEAD; } 2>&1 | tee "$TEST_OUTPUT/logs/toolchain.log"
       - name: Build ad hoc test app
