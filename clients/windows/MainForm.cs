@@ -117,8 +117,11 @@ internal sealed class MainForm : Form
         action.Click += async (_, _) => { if (recording) await StopRecordingAsync(); else if (!busy) await StartRecordingAsync(); };
         timer.Tick += async (_, _) =>
         {
-            if (!busy) await UpdateIdlePreviewAsync();
+            if (!recording && !busy && recorder != null && !recorder.CleanupPending)
+            { recorder = null; SetControls(true); }
+            if (!busy && recorder?.CleanupPending != true) await UpdateIdlePreviewAsync();
             if (!recording || recorder == null) return;
+            recorder.PreviewEnabled = previewVisible && Visible && WindowState != FormWindowState.Minimized && !edge.IsDocked;
             clock.Text = FormatTimecode(recorder.Seconds);
             detail.Text = "正在写入本机 · 15 秒无操作后收起";
             sound.Text = !options.SystemAudio ? "系统声音已关闭" : recorder.Peak > .001 ? "●  收到系统声音" : "○  系统声音静音 · 时长正常保留";
@@ -134,7 +137,7 @@ internal sealed class MainForm : Form
             excluded = SetWindowDisplayAffinity(Handle, 0x11);
             if (!excluded) { action.Enabled = false; state.Text = "无法排除录制小窗"; detail.Text = "请使用 Windows 10 2004 或更新版本"; }
         };
-        VisibleChanged += async (_, _) => await UpdateIdlePreviewAsync();
+        VisibleChanged += async (_, _) => { if (recorder != null) recorder.PreviewEnabled = previewVisible && Visible && WindowState != FormWindowState.Minimized; await UpdateIdlePreviewAsync(); };
         Resize += async (_, _) => await UpdateIdlePreviewAsync();
         FormClosing += (_, e) =>
         {
@@ -203,6 +206,30 @@ internal sealed class MainForm : Form
         content.Controls.Add(quality); content.Controls.Add(estimate); Estimate();
         var refreshDevices = new Button { Text = "重新检测设备", AutoSize = true };
         refreshDevices.Click += (_, _) => { FillScreens(); Estimate(); }; content.Controls.Add(refreshDevices);
+        var recover = new Button { Text = "扫描并恢复未完成素材的副本", AutoSize = true };
+        bool recovering = false;
+        dialog.FormClosing += (_, e) => { if (recovering) e.Cancel = true; };
+        recover.Click += async (_, _) => {
+            if (busy) return;
+            busy = recovering = true;
+            SetControls(false); content.Enabled = false;
+            var recoveryRecorder = new Recorder(tools);
+            try {
+                await StopIdlePreviewAsync();
+                var recovered = await recoveryRecorder.RecoverUnfinishedAsync(root);
+                MessageBox.Show(dialog, recovered.Length == 0 ? "未找到可恢复的未完成素材。正在录制的目录会跳过。" : $"已生成 {recovered.Length} 份恢复副本。请在素材目录的 Recovery 文件夹检查音画。原素材保留。", "素材恢复");
+            } catch (Exception ex) { MessageBox.Show(dialog, ex.Message, "恢复未完成，原素材保留"); }
+            finally {
+                busy = recovering = false; content.Enabled = true;
+                if (recoveryRecorder.CleanupPending) {
+                    recorder = recoveryRecorder; state.Text = "素材需要检查";
+                    detail.Text = "恢复进程尚未退出，暂不可再次录制或恢复。可退出后重新打开。";
+                    content.Enabled = false;
+                }
+                SetControls(true);
+            }
+        };
+        content.Controls.Add(recover);
         var done = new Button { Text = "完成", AutoSize = true, BackColor = Color.FromArgb(255, 102, 38) }; done.Click += (_, _) => dialog.Close(); content.Controls.Add(done);
         dialog.FormClosed += (_, _) => { foreach (Button card in cards.Controls) card.Image?.Dispose(); };
         dialog.ShowDialog(this);
@@ -231,7 +258,7 @@ internal sealed class MainForm : Form
         try
         {
             var screen = Screen.AllScreens.FirstOrDefault(x => x.DeviceName == options.ScreenId);
-            bool wanted = !IsDisposed && !Disposing && !busy && Visible && previewVisible && WindowState != FormWindowState.Minimized && !edge.IsDocked && screen != null;
+            bool wanted = !IsDisposed && !Disposing && !busy && recorder?.CleanupPending != true && Visible && previewVisible && WindowState != FormWindowState.Minimized && !edge.IsDocked && screen != null;
             if (idlePreview != null && (!wanted || idlePreview.Bounds != screen!.Bounds || idlePreview.HasExited))
                 await StopIdlePreviewCoreAsync();
             if (!wanted || IsDisposed || Disposing || busy || !Visible || !previewVisible || WindowState == FormWindowState.Minimized || idlePreview != null || DateTime.UtcNow < nextIdlePreviewAttempt) return;
@@ -350,7 +377,7 @@ internal sealed class MainForm : Form
     public void SetTestOutput(string directory) { if (busy) throw new InvalidOperationException(); root = directory; }
     public async Task StartRecordingAsync()
     {
-        if (busy) return;
+        if (busy || recorder?.CleanupPending == true) return;
         LastError = null; clock.Text = "00:00:00"; clock.Visible = false; busy = true; SetControls(false); state.Text = "正在准备…";
         try
         {
@@ -391,8 +418,9 @@ internal sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            lastFolder = recorder?.Folder; recorder = null; busy = false;
-            SetThreadExecutionState(0x80000000); SetControls(true); state.Text = "未能开始"; ShowError(ex);
+            lastFolder = recorder?.Folder; if (recorder?.CleanupPending != true) recorder = null; busy = false;
+            SetThreadExecutionState(0x80000000); SetControls(true); state.Text = recorder?.CleanupPending == true ? "素材需要检查" : "未能开始"; ShowError(ex);
+            if (recorder?.CleanupPending == true) { detail.Text = "后台资源尚未释放，暂不可再次录制。可退出后重新打开恢复原素材。"; FitContent(); }
         }
     }
     public async Task StopRecordingAsync(string? reason = null)
@@ -410,12 +438,13 @@ internal sealed class MainForm : Form
         catch (Exception ex) { state.Text = "素材需要检查"; ShowError(ex); }
         finally
         {
-            busy = false; recorder = null; SetThreadExecutionState(0x80000000); SetControls(true);
+            busy = false; if (!current.CleanupPending) recorder = null; SetThreadExecutionState(0x80000000); SetControls(true);
             action.Text = "开始录制"; state.ForeColor = Ink; sound.Text = "原始素材已保留，可在目录中查看";
+            if (current.CleanupPending) detail.Text = "素材需要检查；后台资源尚未释放，暂不可再次录制。可退出后重新打开恢复原素材。";
             fold.Text = previewVisible ? "上次录制画面  ∧" : "展开上次画面  ∨"; FitContent();
         }
     }
-    void SetControls(bool enabled) { settingsButton.Enabled = screens.Enabled = outputs.Enabled = folder.Enabled = refresh.Enabled = enabled; action.Enabled = enabled && excluded; }
+    void SetControls(bool enabled) { enabled &= recorder?.CleanupPending != true; settingsButton.Enabled = screens.Enabled = outputs.Enabled = folder.Enabled = refresh.Enabled = enabled; action.Enabled = enabled && excluded; }
     void ShowError(Exception ex) { edge.Reveal(false); LastError = ex; detail.Text = ex.Message; FitContent(); if (!Automation) MessageBox.Show(this, ex.Message, "录制提示", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
     protected override void WndProc(ref Message message)
     {

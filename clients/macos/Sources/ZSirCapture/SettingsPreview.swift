@@ -10,6 +10,7 @@ final class SettingsCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     var onFrame: ((CMSampleBuffer) -> Void)?
     var onLevel: ((Double) -> Void)?
     private var lastFrame = Date.distantPast
+    private var lastLevel = Date.distantPast
     func start(_ selection: DeviceSelection) async throws {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             queue.async { [self] in
@@ -38,6 +39,11 @@ final class SettingsCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
         await withCheckedContinuation { c in queue.async { [self] in session.startRunning(); c.resume() } }
     }
+    func blockOwnerForCheck(until signal: DispatchSemaphore) async {
+        await withCheckedContinuation { continuation in
+            queue.async { continuation.resume(); signal.wait() }
+        }
+    }
     func stop() async {
         await withCheckedContinuation { c in queue.async { [self] in session.stopRunning(); c.resume() } }
     }
@@ -46,6 +52,8 @@ final class SettingsCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             guard Date().timeIntervalSince(lastFrame) >= 0.1, let frame = LivePreviewSample.make(from: sample) else { return }
             lastFrame = Date(); onFrame?(frame)
         } else {
+            guard Date().timeIntervalSince(lastLevel) >= 0.1 else { return }
+            lastLevel = Date()
             let db = connection.audioChannels.map(\.averagePowerLevel).max() ?? -160
             onLevel?(min(1, max(0, pow(10, Double(db) / 20))))
         }
@@ -63,8 +71,13 @@ final class SettingsPreview: ObservableObject {
     private var camera: SettingsCamera?
     private var generation = 0
     private var legacyPreview: Task<CGImage, Error>?
-    func stop() async {
+    func installCameraForCheck(_ device: SettingsCamera) { camera = device }
+    func invalidate() {
         generation += 1
+        feed.frame = nil; level = 0; thumbnails = [:]; sizes = [:]
+    }
+    func stop() async {
+        invalidate()
         let old = camera; camera = nil
         let oldPreview = legacyPreview; legacyPreview = nil
         oldPreview?.cancel()

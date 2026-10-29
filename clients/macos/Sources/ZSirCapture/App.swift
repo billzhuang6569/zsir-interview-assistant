@@ -8,6 +8,7 @@ final class CaptureModel: ObservableObject {
     @Published var phase = "准备就绪"
     @Published var detail = ""
     @Published var busy = false
+    @Published var requiresRestart = false
     @Published var canStop = false
     @Published var recordedSeconds: TimeInterval = 0
     var timecode: String {
@@ -111,17 +112,83 @@ final class CaptureModel: ObservableObject {
     private var previewGeneration = 0
     private var settingsPreviewTask: Task<Void, Never>?
 
-    func stopSettingsPreview() async {
-        let pending = settingsPreviewTask
-        pending?.cancel()
-        await pending?.value
-        await settingsPreview.stop()
+    private var settingsStopTask: Task<Void, Never>?
+    private var settingsStopGate: RecordingCompletion?
+
+    @discardableResult
+    func stopSettingsPreview(timeout: TimeInterval = 15) async -> Bool {
+        let gate: RecordingCompletion
+        if let existing = settingsStopGate { gate = existing }
+        else {
+            gate = RecordingCompletion()
+            settingsStopGate = gate
+            let pending = settingsPreviewTask
+            settingsPreviewTask = nil
+            pending?.cancel()
+            settingsPreview.invalidate()
+            let cleanup = Task {
+                await pending?.value
+                await self.settingsPreview.stop()
+            }
+            settingsStopTask = cleanup
+            Task { [self] in
+                await cleanup.value
+                gate.complete(.success(()))
+                if settingsStopGate === gate { settingsStopTask = nil; settingsStopGate = nil }
+            }
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout) {
+                gate.complete(.failure(RecordingError("设置预览清理超过 15 秒；请退出并重新打开，暂不能开始新采集")))
+            }
+        }
+        let result = await withCheckedContinuation { continuation in
+            gate.observe { continuation.resume(returning: $0) }
+        }
+        if case .failure(let failure) = result {
+            requiresRestart = true
+            busy = true
+            phase = "设备需要重启"
+            detail = "设置预览未及时释放；可退出后重新打开"
+            error = error ?? failure.localizedDescription
+            return false
+        }
+        return true
+    }
+
+    static func checkSettingsPreviewDeadline() async throws {
+        for pendingRefresh in [true, false] {
+            let suite = "zsir.settings-deadline.\(UUID().uuidString)"
+            let defaults = UserDefaults(suiteName: suite)!
+            defer { defaults.removePersistentDomain(forName: suite) }
+            let model = CaptureModel(permissions: PermissionSetup(defaults: defaults))
+            model.busy = true // Same preparation state as the Start button path.
+            let camera = SettingsCamera()
+            let release = DispatchSemaphore(value: 0)
+            await camera.blockOwnerForCheck(until: release)
+            model.settingsPreview.installCameraForCheck(camera)
+            let pendingDone = RecordingCompletion()
+            if pendingRefresh {
+                model.settingsPreviewTask = Task { await camera.stop(); pendingDone.complete(.success(())) }
+            }
+            let started = ProcessInfo.processInfo.systemUptime
+            let stopped = await model.stopSettingsPreview(timeout: 0.05)
+            precondition(!stopped && model.requiresRestart && model.busy && !model.canStop)
+            precondition(ProcessInfo.processInfo.systemUptime - started < 1)
+            precondition(model.settingsStopTask != nil)
+            if pendingRefresh { precondition(!pendingDone.isCompleted) }
+            model.start() // Restart-required state must never create another engine.
+            precondition(model.engine == nil)
+            release.signal()
+            await model.settingsStopTask?.value
+            if pendingRefresh { precondition(pendingDone.isCompleted) }
+            precondition(model.requiresRestart) // Only an explicit restart clears this terminal state.
+        }
+        print("PASS: pending settings refresh and blocked camera stop have independent deadlines; cleanup stays alive; restart-required state blocks capture and permits explicit exit")
     }
 
     func refreshSettingsPreview() async {
         await updateIdlePreview(enabled: false).value
         await stopSettingsPreview()
-        guard !Task.isCancelled, settingsVisible, previewWindowVisible, !busy else { return }
+        guard !Task.isCancelled, settingsVisible, previewWindowVisible, !busy, !requiresRestart else { return }
         let selection = selection
         let mode = mode
         let task = Task { await settingsPreview.refresh(selection: selection, mode: mode) }
@@ -153,15 +220,23 @@ final class CaptureModel: ObservableObject {
             guard let self else { return }
             if let old = self.idleEngine {
                 self.idleEngine = nil
-                try? await old.stop()
+                do { try await old.stop() }
+                catch {
+                    self.idlePreviewError = error.localizedDescription
+                    self.requiresRestart = true
+                    self.busy = true
+                    self.phase = "素材需要检查"
+                    self.detail = "预览设备未能及时释放，请退出并重新打开"
+                    return
+                }
             }
             guard token == self.previewGeneration, enabled, self.previewVisible, self.previewWindowVisible,
-                  !self.busy, !self.settingsVisible, !self.permissions.visible,
+                  !self.busy, !self.requiresRestart, !self.settingsVisible, !self.permissions.visible,
                   self.permissions.requesting == nil else { return }
             self.permissions.refresh(for: self.mode)
             guard self.permissions.ready(for: self.mode) else { return }
             self.idlePreviewError = nil
-            await self.stopSettingsPreview()
+            guard await self.stopSettingsPreview(), !self.requiresRestart else { return }
             guard token == self.previewGeneration else { return }
             let preview = CaptureEngine()
             self.idleEngine = preview
@@ -180,7 +255,21 @@ final class CaptureModel: ObservableObject {
                 try await preview.startPreview(mode: self.mode, selection: self.selection)
                 if token != self.previewGeneration { preview.setPreviewEnabled(false) }
             } catch {
-                try? await preview.stop()
+                let wasBusy = self.busy
+                self.busy = true
+                self.requiresRestart = true
+                self.idlePreviewError = error.localizedDescription
+                self.phase = "预览需要检查"
+                self.detail = "正在清理设备；无响应时可退出并重新打开"
+                do {
+                    try await preview.stop()
+                    self.requiresRestart = false
+                    self.busy = wasBusy
+                } catch {
+                    self.idlePreviewError = error.localizedDescription
+                    self.phase = "设备需要重启"
+                    self.detail = "设备未及时释放，请退出并重新打开"
+                }
                 if self.idleEngine === preview { self.idleEngine = nil }
                 if token == self.previewGeneration {
                     self.idlePreviewLive = false
@@ -230,7 +319,7 @@ final class CaptureModel: ObservableObject {
         guard deviceObservers.isEmpty else { return }
         for name in [NSApplication.didChangeScreenParametersNotification, NSNotification.Name.AVCaptureDeviceWasConnected, NSNotification.Name.AVCaptureDeviceWasDisconnected] {
             deviceObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                Task { @MainActor in self?.refreshDevices() }
+                Task { @MainActor [weak self] in self?.refreshDevices() }
             })
         }
         refreshDevices()
@@ -265,8 +354,20 @@ final class CaptureModel: ObservableObject {
         if panel.runModal() == .OK, let url = panel.url { root = url; scanRecovery() }
     }
 
+    var canOpenSettings: Bool {
+        !busy && !canStop && !requiresRestart && settingsStopTask == nil &&
+            permissions.requesting == nil && !permissions.visible
+    }
+
+    func openSettings() {
+        guard canOpenSettings else { return }
+        refreshDevices()
+        scanRecovery()
+        settingsVisible = true
+    }
+
     func start() {
-        guard !busy, !settingsVisible, !permissions.visible, permissions.requesting == nil else { return }
+        guard !busy, !requiresRestart, !settingsVisible, !permissions.visible, permissions.requesting == nil else { return }
         permissions.refresh(for: mode)
         guard permissions.ready(for: mode) else {
             permissions.present(for: mode, busy: busy)
@@ -308,10 +409,15 @@ final class CaptureModel: ObservableObject {
             self.stop()
         }
         Task {
+            var attemptedStart = false
             do {
                 await idleStopped.value
+                guard !requiresRestart else { throw RecordingError("预览设备未能及时释放，请退出并重新打开") }
                 try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-                await stopSettingsPreview()
+                guard await stopSettingsPreview(), !requiresRestart else {
+                    throw RecordingError("设置预览未能及时释放，请退出并重新打开")
+                }
+                attemptedStart = true
                 lastTake = try await recorder.start(in: root, mode: mode, selection: selection, quality: quality, systemAudio: systemAudio, profile: profile)
                 canStop = true
                 if self.error != nil { stop(); return }
@@ -321,7 +427,13 @@ final class CaptureModel: ObservableObject {
                 phase = "未能开始"
                 detail = "检查权限与设备后重试"
                 self.error = error.localizedDescription
-                busy = false
+                if attemptedStart {
+                    requiresRestart = true
+                    detail = "启动失败；如设备仍在清理，请退出并重新打开"
+                    await recorder.waitForCleanup()
+                    requiresRestart = false
+                }
+                busy = requiresRestart
                 engine = nil
             }
         }
@@ -341,7 +453,13 @@ final class CaptureModel: ObservableObject {
                 phase = "素材需要检查"
                 detail = "已保留现有文件与检查报告"
                 self.error = error.localizedDescription
+                requiresRestart = true
+                detail = "素材已保留；设备仍在清理时可退出，重开后恢复副本"
             }
+            // The UI leaves “saving” at the deadline, while device ownership stays
+            // busy until cleanup really finishes; never open a second capture session.
+            await recorder.waitForCleanup()
+            requiresRestart = false
             engine = nil
             busy = false
         }
@@ -423,7 +541,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.model.updates.promptIfNeeded(window: window)
             }
         }
-        if CommandLine.arguments.contains("--show-settings") { model.settingsVisible = true }
+        if CommandLine.arguments.contains("--show-settings") { model.openSettings() }
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -433,6 +551,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if model.requiresRestart {
+            let alert = NSAlert()
+            alert.messageText = "退出并保留待检查素材？"
+            alert.informativeText = "设备或编码器未及时结束。退出会中断残余清理；重新打开后可恢复已落盘片段的副本。原素材保留。"
+            alert.addButton(withTitle: "退出")
+            alert.addButton(withTitle: "继续等待")
+            return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+        }
         if model.busy {
             let alert = NSAlert()
             alert.messageText = model.canStop ? "请先停止录制并等待保存完成" : "正在处理素材，请等待完成后退出"
@@ -448,6 +574,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 enum CaptureApp {
     @MainActor static func main() {
         let app = NSApplication.shared
+        if CommandLine.arguments.contains("--check-lifecycle") {
+            Task { do { try await CaptureEngine.checkPreparationStopRaces(); try await CaptureModel.checkSettingsPreviewDeadline(); try await CaptureEngine.checkBoundedPreviewStartup(); try await CaptureEngine.checkBoundedStop(); exit(0) } catch { print("FAIL lifecycle: \(error)"); exit(1) } }
+            app.run(); return
+        }
         if CommandLine.arguments.contains("--check-updates") {
             Task { do { try await UpdateChecks.run(); exit(0) } catch { print("FAIL updates: \(error)"); exit(1) } }
             app.run(); return

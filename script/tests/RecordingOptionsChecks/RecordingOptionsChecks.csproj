@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../../clients/windows/RecordingOptions.cs" Link="RecordingOptions.cs" />
+    <Compile Include="../../../clients/windows/FinalizationBudget.cs" Link="FinalizationBudget.cs" />
   </ItemGroup>
 </Project>

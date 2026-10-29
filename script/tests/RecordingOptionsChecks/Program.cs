@@ -4,6 +4,9 @@ static void Check(bool value, string description)
 {
     if (!value) throw new Exception(description);
 }
+RunBudgetChecks();
+if (args.Contains("--budget-checks")) return;
+
 // Run with XDG_DATA_HOME set to a throwaway directory; never alter user settings.
 var root = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
 Check(!string.IsNullOrEmpty(root) && Path.IsPathFullyQualified(root), "Set XDG_DATA_HOME to an absolute temporary directory");
@@ -48,3 +51,37 @@ try { RecordingOptions.BitRate("high", 32768, 32768); throw new Exception("overf
 catch (ArgumentOutOfRangeException) { }
 Directory.Delete(root, recursive: true);
 Console.WriteLine("PASS: profiles, portrait/ultrawide sizing, even pixels, bitrate, migration, persistence, invalid inputs");
+
+static void RunBudgetChecks()
+{
+    static void TimesOut(Action work)
+    {
+        try { work(); } catch (TimeoutException) { return; }
+        throw new Exception("Expected finalization timeout");
+    }
+    const long bytes = 32_000_000_000;
+    var copy = FinalizationBudget.Calculate(bytes, 3600, false, false);
+    var mux = FinalizationBudget.Calculate(bytes, 3600, true, true);
+    Check(copy.TotalSeconds > bytes / 100_000_000.0, "32 GB at 100 MB/s must fit the copy budget");
+    Check(mux >= copy && mux.TotalSeconds <= 7200, "Audio/mux allowance remains within the two-hour cap");
+    Check(FinalizationBudget.Calculate(0, 0, false, false).TotalSeconds == 120, "Minimum budget");
+    Check(FinalizationBudget.Calculate(long.MaxValue, double.MaxValue, true, true).TotalSeconds == 7200, "Huge input must have a finite cap");
+    foreach (var values in new[] { (-1L, 0d), (0L, double.NaN), (0L, double.PositiveInfinity), (0L, -1d) })
+    {
+        bool rejected = false;
+        try { FinalizationBudget.Calculate(values.Item1, values.Item2, true, true); }
+        catch (ArgumentOutOfRangeException) { rejected = true; }
+        Check(rejected, "Invalid finalization input accepted");
+    }
+    var advancing = new FinalizationBudget.Progress();
+    for (int second = 1; second <= 320; second++) advancing.Check(second, (ulong)second * 100_000_000, copy);
+    var stalled = new FinalizationBudget.Progress();
+    stalled.Check(1, 65536, copy);
+    TimesOut(() => stalled.Check(61, 65536, copy));
+    var tinyLogs = new FinalizationBudget.Progress();
+    for (int second = 1; second < 60; second++) tinyLogs.Check(second, (ulong)second, copy);
+    TimesOut(() => tinyLogs.Check(60, 60, copy));
+    var capped = new FinalizationBudget.Progress();
+    TimesOut(() => capped.Check(copy.TotalSeconds, ulong.MaxValue, copy));
+    Console.WriteLine($"PASS: finalization budget/progress boundaries; 32 GB copy {copy.TotalSeconds}s, mux/audio {mux.TotalSeconds}s");
+}

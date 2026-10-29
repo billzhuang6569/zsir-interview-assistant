@@ -85,10 +85,10 @@ struct CaptureView: View {
                 .disabled((model.busy && !model.canStop) || permissions.requesting != nil).buttonStyle(RecorderActionStyle(accent: accent))
                 Button { model.reveal() } label: { Image(systemName: "folder").frame(width: 20, height: 20) }
                     .help("打开素材目录").accessibilityLabel("打开素材目录")
-                Button { model.refreshDevices(); model.scanRecovery(); model.settingsVisible = true } label: {
-                    Image(systemName: model.recoverable.isEmpty ? "slider.horizontal.3" : "exclamationmark.arrow.triangle.2.circlepath")
+                Button { model.openSettings() } label: {
+                    Image(systemName: "gearshape")
                         .frame(width: 20, height: 20)
-                }.disabled(model.busy || permissions.requesting != nil).help("设备、保存位置与素材恢复").accessibilityLabel("录制设置")
+                }.disabled(!model.canOpenSettings).help("设备、保存位置与素材恢复").accessibilityLabel("录制设置")
             }.controlSize(.regular)
         }
         .padding(16).frame(width: 336).fixedSize(horizontal: false, vertical: true)

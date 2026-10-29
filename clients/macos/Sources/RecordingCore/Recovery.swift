@@ -44,7 +44,7 @@ public enum RecordingRecovery {
             guard isRegular(reportURL),
                   let data = try? Data(contentsOf: reportURL),
                   let report = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                  report["state"] as? String != "finalized_unverified",
+                  (report["state"] as? String != "finalized_unverified" || isRegular(folder.appendingPathComponent("stop-timeout.json"))),
                   report["recoveryState"] as? String != "recovered" else { return nil }
             let files = ["camera.mp4", "desktop.mp4"].map { folder.appendingPathComponent($0) }.filter(isRegular)
             guard !files.isEmpty, let lease = try? TakeLease(folder: folder) else { return nil }

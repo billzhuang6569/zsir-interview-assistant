@@ -16,11 +16,23 @@ internal static class SmokeTest
         TestScene? scene = null;
         try
         {
-            int duration = int.TryParse(Environment.GetEnvironmentVariable("ZSIR_SMOKE_SECONDS"), out int requested) ? Math.Clamp(requested, 18, 3600) : 18;
+            int duration = int.TryParse(Environment.GetEnvironmentVariable("ZSIR_SMOKE_SECONDS"), out int requested) ? Math.Clamp(requested, 18, 7200) : 18;
             int spacing = duration == 18 ? 5 : (duration - 8) / 2;
             var analysisTimeout = TimeSpan.FromSeconds(Math.Max(60, duration / 2));
             report["requestedSeconds"] = duration;
             CheckAudioFile(root);
+            var blockedWriter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            string pendingLeasePath = Path.Combine(root, "pending-cleanup.lock");
+            var pendingLease = new FileStream(pendingLeasePath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+            var release = Recorder.ReleaseCleanupLeaseAsync(pendingLease, [blockedWriter.Task]);
+            bool locked = false;
+            try { using var competing = new FileStream(pendingLeasePath, FileMode.Open, FileAccess.Read, FileShare.None); }
+            catch (IOException) { locked = true; }
+            if (!locked || release.IsCompleted) throw new Exception("Pending cleanup released its Take lease");
+            blockedWriter.SetException(new IOException("Injected writer completion failure"));
+            await release.WaitAsync(TimeSpan.FromSeconds(2));
+            using (var completedLease = new FileStream(pendingLeasePath, FileMode.Open, FileAccess.Read, FileShare.None)) { }
+            report["pendingCleanupLeasePassed"] = true;
             string missingTools = Path.Combine(root, "missing-tools");
             string untouchedOutput = Path.Combine(root, "missing-tools-output");
             foreach (string available in new[] { "ffmpeg.exe", "ffprobe.exe" })
@@ -86,14 +98,16 @@ internal static class SmokeTest
             string pcm = Path.Combine(root, "audio-check.f32");
             var audio = await recorder.RunAsync("ffmpeg.exe", ["-v", "error", "-n", "-i", video, "-vn", "-ac", "1", "-ar", "48000", "-f", "f32le", pcm], analysisTimeout);
             if (audio.Code != 0) throw new Exception(audio.Error);
-            var audioPeaks = ToneStarts(await File.ReadAllBytesAsync(pcm));
-            var stats = await recorder.RunAsync("ffmpeg.exe", ["-hide_banner", "-nostats", "-i", video, "-an", "-vf", "scale=32:18,signalstats,metadata=print:key=lavfi.signalstats.YAVG", "-f", "null", "NUL"], analysisTimeout);
+            var audioPeaks = await Task.Run(() => ToneStarts(pcm));
+            var stats = await recorder.RunAsync("ffmpeg.exe", ["-hide_banner", "-nostats", "-i", video, "-an", "-vf", "scale=32:18,signalstats,metadata=print:key=lavfi.signalstats.YAVG:file=video-flashes.txt", "-f", "null", "NUL"], analysisTimeout, root);
             if (stats.Code != 0) throw new Exception(stats.Error);
-            var flashes = FlashStarts(stats.Error);
+            string flashMetadata = Path.Combine(root, "video-flashes.txt");
+            if (new FileInfo(flashMetadata).Length > 128 * 1024 * 1024) throw new Exception("Video analysis exceeded 128 MB disk budget");
+            var flashes = FlashStarts(File.ReadLines(flashMetadata));
             report["audioToneStartsSeconds"] = audioPeaks; report["videoFlashStartsSeconds"] = flashes;
             if (audioPeaks.Count != 3 || flashes.Count != 3) throw new Exception($"Expected 3 audible tones and 3 video flashes; got {audioPeaks.Count}/{flashes.Count}");
             var offsets = audioPeaks.Zip(flashes, (a, v) => a - v).ToArray(); report["audioMinusVideoSeconds"] = offsets;
-            if (offsets.Any(x => Math.Abs(x) > .25)) throw new Exception("Audio/video offset exceeds 250 ms");
+            if (offsets.Any(x => Math.Abs(x) > .1)) throw new Exception("Audio/video offset exceeds 100 ms");
             if (Math.Abs(audioPeaks[1] - audioPeaks[0] - spacing) > .2 || Math.Abs(audioPeaks[2] - audioPeaks[1] - spacing) > .2) throw new Exception("Silent gaps were not preserved");
             report["fullDecodePassed"] = true;
             // Repeat through the same UI path without test sound; a silent Take must still have an audio track.
@@ -131,7 +145,59 @@ internal static class SmokeTest
             report["interruptedVideoReadable"] = true;
             if (!form.Visible || form.Edge.IsDocked) throw new Exception("Encoder failure left window hidden");
             report["encoderInterruptionHandled"] = true;
+            string recoveryRoot = Path.Combine(root, "recovery-check");
+            string recoveryTake = Path.Combine(recoveryRoot, "Take-fixture");
+            Directory.CreateDirectory(recoveryTake);
+            foreach (string file in new[] { "desktop-video.mp4", "system-audio.wav", "report.json" })
+                File.Copy(Path.Combine(form.LastFolder!, file), Path.Combine(recoveryTake, file));
+            string originalVideo = Path.Combine(recoveryTake, "desktop-video.mp4");
+            string beforeHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(originalVideo)));
+            using (var activeLease = new FileStream(Path.Combine(recoveryTake, ".recording.lock"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+                if ((await new Recorder(tools).RecoverUnfinishedAsync(recoveryRoot)).Length != 0) throw new Exception("Active take was recovered");
+            var recoveredCopies = await new Recorder(tools).RecoverUnfinishedAsync(recoveryRoot);
+            if (recoveredCopies.Length != 1 || beforeHash != Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(originalVideo))))
+                throw new Exception("Recovery failed or modified the original video");
+            var recoveryDecode = await interrupted.RunAsync("ffmpeg.exe", ["-v", "error", "-xerror", "-i", recoveredCopies[0], "-f", "null", "NUL"], analysisTimeout);
+            if (recoveryDecode.Code != 0) throw new Exception("Recovery copy cannot decode");
+            report["recoveryOriginalHashUnchanged"] = beforeHash;
+            report["recoveryCopy"] = recoveredCopies[0];
             report["audioFileChecksPassed"] = true;
+            if (int.TryParse(Environment.GetEnvironmentVariable("ZSIR_SMOKE_CYCLES"), out int cycles))
+            {
+                cycles = Math.Clamp(cycles, 1, 20);
+                var cycleMedia = new List<object>();
+                for (int cycle = 0; cycle < cycles; cycle++)
+                {
+                    await form.StartRecordingAsync();
+                    if (!form.IsRecording) throw form.LastError ?? new Exception("Cycle start failed");
+                    var session = form.CurrentRecorder!;
+                    await Task.Delay(2500);
+                    if (cycle == 0)
+                    {
+                        long visible = session.PreviewFrames;
+                        if (visible == 0) throw new Exception("Preview producer emitted no frames");
+                        toggle.PerformClick();
+                        await Task.Delay(2000); // Allow the finite encoder/pipe in-flight frames to drain.
+                        long hidden = session.PreviewFrames;
+                        double before = session.Seconds;
+                        await Task.Delay(2500);
+                        if (session.PreviewFrames != hidden || session.Seconds <= before)
+                            throw new Exception("Hidden preview producer did not stop or video stopped");
+                        toggle.PerformClick();
+                        await Task.Delay(2000);
+                        if (session.PreviewFrames <= hidden) throw new Exception("Preview producer failed to resume");
+                        report["previewProducerGatePassed"] = true;
+                    }
+                    await form.StopRecordingAsync();
+                    if (form.LastError != null) throw form.LastError;
+                    string clip = Path.Combine(form.LastFolder!, "desktop.mp4");
+                    var cycleInfo = await session.ProbeAsync(clip);
+                    var cycleDecode = await session.RunAsync("ffmpeg.exe", ["-v", "error", "-xerror", "-i", clip, "-f", "null", "NUL"], TimeSpan.FromSeconds(30));
+                    if (cycleDecode.Code != 0) throw new Exception("Cycle output decode failed: " + cycleDecode.Error);
+                    cycleMedia.Add(new { cycle = cycle + 1, folder = form.LastFolder, media = cycleInfo });
+                }
+                report["repeatCycles"] = cycleMedia;
+            }
             report["state"] = "passed";
         }
         catch (Exception ex)
@@ -161,23 +227,26 @@ internal static class SmokeTest
     {
         foreach (Control child in parent.Controls) { yield return child; foreach (var nested in Descendants(child)) yield return nested; }
     }
-    static List<double> ToneStarts(byte[] pcm)
+    static List<double> ToneStarts(string path)
     {
         var result = new List<double>(); bool active = false;
-        for (int offset = 0; offset + 480 * 4 <= pcm.Length; offset += 480 * 4)
+        using var input = File.OpenRead(path);
+        byte[] pcm = new byte[480 * 4];
+        for (long offset = 0; offset + pcm.Length <= input.Length; offset += pcm.Length)
         {
+            input.ReadExactly(pcm);
             double sin = 0, cos = 0;
-            for (int i = 0; i < 480; i++) { float sample = BitConverter.ToSingle(pcm, offset + i * 4); double phase = 2 * Math.PI * 997 * i / 48000; sin += sample * Math.Sin(phase); cos += sample * Math.Cos(phase); }
+            for (int i = 0; i < 480; i++) { float sample = BitConverter.ToSingle(pcm, i * 4); double phase = 2 * Math.PI * 997 * i / 48000; sin += sample * Math.Sin(phase); cos += sample * Math.Cos(phase); }
             bool detected = 2 * Math.Sqrt(sin * sin + cos * cos) / 480 > .004;
             if (detected && !active) result.Add(offset / (48000.0 * 4));
             active = detected;
         }
         return result;
     }
-    static List<double> FlashStarts(string metadata)
+    static List<double> FlashStarts(IEnumerable<string> metadata)
     {
         var result = new List<double>(); double time = 0; bool bright = false;
-        foreach (string line in metadata.Split('\n'))
+        foreach (string line in metadata)
         {
             var frame = Regex.Match(line, @"pts_time:([0-9.]+)");
             if (frame.Success) time = double.Parse(frame.Groups[1].Value, CultureInfo.InvariantCulture);
