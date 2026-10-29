@@ -32,7 +32,7 @@ struct CaptureSettings: View {
             }.padding(28)
         }.frame(width: 720, height: min(860, max(500, (NSScreen.main?.visibleFrame.height ?? 900) - 100)))
             .background(Color(white: 0.075))
-            .onDisappear { Task { await model.settingsPreview.stop() } }
+            .onDisappear { Task { await model.stopSettingsPreview() } }
     }
     private var advancedSettings: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -70,12 +70,23 @@ private struct SettingsSources: View {
     private var screenAllowed: Bool { CapturePermission.status(.screen) == .allowed }
     private var taskID: String {
         let screens = model.displays.map { "\($0.id):\(CGDisplayPixelsWide(UInt32($0.id) ?? 0))x\(CGDisplayPixelsHigh(UInt32($0.id) ?? 0))" }.joined()
-        return "\(model.selection.cameraID)|\(model.selection.microphoneID)|\(model.mode.rawValue)|\(screens)|\(model.cameras.map(\.id))|\(model.microphones.map(\.id))|\(refresh)|\(permissionRevision)"
+        return "\(model.selection.cameraID)|\(model.selection.microphoneID)|\(model.mode.rawValue)|\(screens)|\(model.cameras.map(\.id))|\(model.microphones.map(\.id))|\(refresh)|\(permissionRevision)|\(model.previewWindowVisible)"
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             if model.mode.includesCamera { cameraCard }
             if model.mode.includesDesktop { desktopCard }
+            if model.mode.includesDesktop {
+                Picker("桌面分辨率", selection: $model.profile) {
+                    ForEach(RecordingProfile.allCases) { profile in Text(profile.title).tag(profile) }
+                }.pickerStyle(.segmented)
+                Text("按屏幕比例缩小，不放大；1080p / 1440p 分别以长边 1920 / 2560 像素为上限。")
+                    .font(.caption).foregroundStyle(.secondary)
+                if model.mode.includesCamera {
+                    Text("摄像头仍按设备支持的 1080p 采集；此设置仅影响桌面画面。")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
             HStack { Text("画质").fontWeight(.semibold); Spacer(); Text(capacity).font(.caption).foregroundStyle(.secondary) }
             HStack(spacing: 4) {
                 ForEach(RecordingQuality.allCases) { quality in
@@ -85,13 +96,19 @@ private struct SettingsSources: View {
                             if quality == .standard { Text("推荐").font(.system(size: 10, weight: .medium)).foregroundStyle(Color(red: 1, green: 0.54, blue: 0.36)).padding(.horizontal, 6).padding(.vertical, 2).background(Color(red: 0.23, green: 0.14, blue: 0.10), in: Capsule()) }
                         }.frame(maxWidth: .infinity).padding(.vertical, 10)
                             .background(model.quality == quality ? Color.white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 9))
-                    }.buttonStyle(.plain).accessibilityAddTraits(model.quality == quality ? .isSelected : [])
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                        .accessibilityLabel(quality == .standard ? "\(quality.title)，推荐" : quality.title)
+                        .accessibilityAddTraits(model.quality == quality ? .isSelected : [])
                 }
             }.padding(4).background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
         }.disabled(model.busy)
-            .task(id: taskID) { if !model.busy { await preview.refresh(selection: model.selection, mode: model.mode) } }
+            .task(id: taskID) {
+                if !model.busy && model.previewWindowVisible { await model.refreshSettingsPreview() }
+                else { await model.stopSettingsPreview() }
+            }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in permissionRevision += 1 }
-            .onDisappear { Task { await preview.stop() } }
+            .onDisappear { Task { await model.stopSettingsPreview() } }
     }
     private func badge(_ text: String, ready: Bool) -> some View {
         Label(text, systemImage: "circle.fill").font(.system(size: 10, weight: .medium)).foregroundStyle(ready ? Color.green : Color.orange)
@@ -171,13 +188,17 @@ private struct SettingsSources: View {
         }.padding(20).background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 16))
     }
     private func dimensions(_ id: UInt32) -> String {
-        if let size = preview.sizes[id] { return "\(Int(size.width)) × \(Int(size.height))" }
+        if let size = preview.sizes[id], let output = try? model.profile.dimensions(width: Int(size.width), height: Int(size.height)) {
+            return "成品 \(output.width) × \(output.height) · 30 fps"
+        }
         return "\(CGDisplayPixelsWide(id)) × \(CGDisplayPixelsHigh(id)) · 待检测实际采集尺寸"
     }
     private var capacity: String {
         var rate = model.mode.includesCamera ? Double(model.quality.cameraBitRate + 192_000) : 0
         if model.mode.includesDesktop {
-            guard let size = preview.sizes[model.selection.displayID], let desktop = try? model.quality.desktopBitRate(width: Int(size.width), height: Int(size.height)) else { return "选择屏幕并授权后估算容量" }
+            guard let size = preview.sizes[model.selection.displayID],
+                  let output = try? model.profile.dimensions(width: Int(size.width), height: Int(size.height)),
+                  let desktop = try? model.quality.desktopBitRate(width: output.width, height: output.height) else { return "选择屏幕并授权后估算容量" }
             rate += Double(desktop + (model.systemAudio ? 192_000 : 0))
         }
         return String(format: "成品合计约 %.1f GB / 小时", rate / 1_000_000 * 0.45)

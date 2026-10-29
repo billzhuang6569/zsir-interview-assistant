@@ -22,12 +22,12 @@ final class PermissionGuide {
         self.panel = panel
         followSettings()
         let timer = Timer(timeInterval: 0.15, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.followSettings() }
+            Task { @MainActor [weak self] in self?.followSettings() }
         }
         tracking = timer
         RunLoop.main.add(timer, forMode: .common)
         activation = NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            Task { @MainActor in self?.close() }
+            Task { @MainActor [weak self] in self?.close() }
         }
     }
     private func followSettings() {

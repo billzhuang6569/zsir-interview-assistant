@@ -55,6 +55,7 @@ final class RecordingEdgeController {
         if now - lastInteraction >= Self.idleDelay {
             placeIndicator()
             isDocked = true
+            model.setPreviewWindowVisible(false)
             window.orderOut(nil)
             indicator.orderFrontRegardless()
         }
@@ -74,6 +75,7 @@ final class RecordingEdgeController {
     func reveal(activate: Bool, now: TimeInterval = ProcessInfo.processInfo.systemUptime) {
         indicator.orderOut(nil)
         isDocked = false
+        model.setPreviewWindowVisible(true)
         lastInteraction = now
         let screen = screenFrame
         var frame = window.frame

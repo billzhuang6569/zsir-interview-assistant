@@ -23,7 +23,39 @@ cd "$WORK/x264"
 make -j8
 make install
 cd "$WORK/ffmpeg"
-PKG_CONFIG_LIBDIR="$WORK/prefix/lib/pkgconfig" ./configure --target-os=mingw32 --arch=x86_64 --cross-prefix=x86_64-w64-mingw32- --enable-cross-compile --pkg-config=pkg-config --pkg-config-flags=--static --extra-cflags="-I$WORK/prefix/include" --extra-ldflags="-L$WORK/prefix/lib -static -static-libgcc" --disable-autodetect --disable-everything --disable-network --disable-doc --disable-debug --disable-ffplay --enable-gpl --enable-libx264 --enable-static --disable-shared --enable-ffmpeg --enable-ffprobe --enable-avdevice --enable-avfilter --enable-swscale --enable-swresample --enable-protocol=file,pipe --enable-indev=gdigrab,lavfi --enable-demuxer=mov,wav,bmp_pipe --enable-muxer=mp4,mov,image2pipe,null,pcm_f32le --enable-encoder=libx264,aac,mjpeg,pcm_f32le,pcm_s16le,wrapped_avframe --enable-decoder=wrapped_avframe,h264,aac,pcm_f32le,pcm_s16le,pcm_s24le,pcm_s32le,pcm_u8,bmp,rawvideo --enable-parser=h264,aac --enable-filter=scale,fps,split,aresample,apad,atrim,asetpts,anull,aformat,format,color,anullsrc,signalstats,metadata,null,trim,setpts
+# Minimal preview gate: allow only constant select expressions through FFmpeg's
+# existing stdin filter command protocol. No socket/control-library dependency.
+# The modified source is included in the corresponding-source archive below.
+python3 - <<'PATCH_PREVIEW'
+from pathlib import Path
+path = Path("libavfilter/f_select.c")
+source = path.read_text()
+if "zsir_preview_command" not in source:
+    marker = "const FFFilter ff_vf_select = {"
+    command = '''static int zsir_preview_command(AVFilterContext *ctx, const char *cmd,
+                                const char *arg, char *res, int res_len, int flags)
+{
+    SelectContext *s = ctx->priv;
+    AVExpr *next = NULL;
+    int ret;
+    if (strcmp(cmd, "expr") || (strcmp(arg, "0") && strcmp(arg, "1")))
+        return AVERROR(ENOSYS);
+    ret = av_expr_parse(&next, arg, var_names, NULL, NULL, NULL, NULL, 0, ctx);
+    if (ret < 0) return ret;
+    av_expr_free(s->expr);
+    s->expr = next;
+    s->do_scene_detect = 0;
+    return 0;
+}
+
+'''
+    assert source.count(marker) == 1
+    source = source.replace(marker, command + marker)
+    source = source.replace("Select video frames to pass in output.", "Select video frames to pass in output. ZSir preview gate v1.")
+    source = source.replace(marker + "\n", marker + "\n    .process_command = zsir_preview_command,\n")
+    path.write_text(source)
+PATCH_PREVIEW
+PKG_CONFIG_LIBDIR="$WORK/prefix/lib/pkgconfig" ./configure --target-os=mingw32 --arch=x86_64 --cross-prefix=x86_64-w64-mingw32- --enable-cross-compile --pkg-config=pkg-config --pkg-config-flags=--static --extra-cflags="-I$WORK/prefix/include" --extra-ldflags="-L$WORK/prefix/lib -static -static-libgcc" --disable-autodetect --disable-everything --disable-network --disable-doc --disable-debug --disable-ffplay --enable-gpl --enable-libx264 --enable-mediafoundation --enable-d3d11va --enable-static --disable-shared --enable-ffmpeg --enable-ffprobe --enable-avdevice --enable-avfilter --enable-swscale --enable-swresample --enable-protocol=file,pipe --enable-indev=gdigrab,lavfi --enable-demuxer=mov,wav,bmp_pipe --enable-muxer=mp4,mov,image2pipe,null,pcm_f32le --enable-encoder=h264_mf,libx264,aac,mjpeg,pcm_f32le,pcm_s16le,wrapped_avframe --enable-decoder=wrapped_avframe,h264,aac,pcm_f32le,pcm_s16le,pcm_s24le,pcm_s32le,pcm_u8,bmp,rawvideo --enable-parser=h264,aac --enable-filter=ddagrab,hwdownload,select,scale,fps,split,aresample,apad,atrim,asetpts,anull,aformat,format,color,anullsrc,signalstats,metadata,null,trim,setpts
 make -j8
 cp ffmpeg.exe ffprobe.exe "$WORK/tools/"
 cp COPYING.GPLv2 "$WORK/tools/FFmpeg-LICENSE.txt"
@@ -33,6 +65,8 @@ cp "$(brew --prefix mingw-w64)/AUTHORS" "$WORK/tools/MinGW-w64-AUTHORS.txt"
 mkdir -p "$WORK/source-release/script" "$WORK/source-release/clients/windows" "$WORK/source-release/sources"
 cp "$WORK/sources/ffmpeg.tar.gz" "$WORK/sources/x264.tar.gz" "$WORK/source-release/sources/"
 cp "$ROOT/script/build-windows-tools.sh" "$WORK/source-release/script/"
+mkdir -p "$WORK/source-release/patches"
+cp "$WORK/ffmpeg/libavfilter/f_select.c" "$WORK/source-release/patches/f_select.c"
 cp "$ROOT/clients/windows/RECORDING-TOOLS.md" "$WORK/source-release/clients/windows/"
 cp "$ROOT/clients/windows/RECORDING-TOOLS.md" "$WORK/tools/SOURCE-NOTICE.md"
 cd "$WORK"

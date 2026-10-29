@@ -1,0 +1,184 @@
+name: Recording preview validation (test only)
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recording-preview-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS native — ${{ matrix.edition }}
+    runs-on: macos-14
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - edition: standard
+            compat: '0'
+            minimum: '13.0'
+          - edition: macos12-compat
+            compat: '1'
+            minimum: '12.3'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Record native toolchain
+        run: |
+          set -euo pipefail
+          TEST_OUTPUT="$RUNNER_TEMP/recording-preview-${{ matrix.edition }}"
+          echo "TEST_OUTPUT=$TEST_OUTPUT" >> "$GITHUB_ENV"
+          mkdir -p "$TEST_OUTPUT/logs"
+          { sw_vers; uname -m; xcodebuild -version; swift --version; git rev-parse HEAD; } 2>&1 | tee "$TEST_OUTPUT/logs/toolchain.log"
+      - name: Build ad hoc test app
+        env:
+          MACOS12_COMPAT: ${{ matrix.compat }}
+          CONFIGURATION: debug
+        run: |
+          set -euo pipefail
+          export APP_BUNDLE="$TEST_OUTPUT/ZSirCapture-test-only-${{ matrix.edition }}.app"
+          export BUILD_ARCH="$(uname -m)"
+          bash script/build_and_run.sh --build-only 2>&1 | tee "$TEST_OUTPUT/logs/build.log"
+      - name: Run native synthetic CaptureChecks
+        run: |
+          set -euo pipefail
+          triple="$(uname -m)-apple-macosx${{ matrix.minimum }}"
+          options=(--package-path clients/macos -c debug --triple "$triple" -Xswiftc -target -Xswiftc "$triple")
+          if [[ '${{ matrix.compat }}' == '1' ]]; then
+            options+=(-Xswiftc -DZSIR_MACOS12_COMPAT)
+          fi
+          set +e
+          swift run "${options[@]}" CaptureChecks --hardware-preflight 2>&1 | tee "$TEST_OUTPUT/logs/hardware-preflight.log"
+          preflight_status=${PIPESTATUS[0]}
+          set -e
+          case "$preflight_status" in
+            0)
+              swift run "${options[@]}" CaptureChecks 2>&1 | tee "$TEST_OUTPUT/logs/capture-checks.log"
+              echo "CaptureChecks hardware suite: PASS" >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            78)
+              echo "SKIP: CaptureChecks hardware-encoding suite unsupported on this runner; compilation and portable contract checks still required." | tee "$TEST_OUTPUT/logs/capture-checks.log"
+              echo "::warning::Hardware-encoding CaptureChecks SKIPPED; see hardware-preflight.log. This is not a recording validation pass."
+              echo "CaptureChecks hardware suite: SKIPPED (explicit preflight capability result); not passed." >> "$GITHUB_STEP_SUMMARY"
+              ;;
+            *)
+              echo "::error::Hardware preflight failed unexpectedly (exit $preflight_status); refusing to skip."
+              exit "$preflight_status"
+              ;;
+          esac
+      - name: Run portable Swift contract checks
+        run: |
+          set -euo pipefail
+          swiftc clients/macos/Sources/RecordingCore/RecordingContract.swift clients/macos/ContractChecks/main.swift -o "$TEST_OUTPUT/contract-checks" 2>&1 | tee "$TEST_OUTPUT/logs/contract-build.log"
+          "$TEST_OUTPUT/contract-checks" 2>&1 | tee "$TEST_OUTPUT/logs/contract-checks.log"
+      - name: Archive successful test app
+        if: success()
+        run: |
+          set -euo pipefail
+          ditto -c -k --sequesterRsrc --keepParent "$TEST_OUTPUT/ZSirCapture-test-only-${{ matrix.edition }}.app" "$TEST_OUTPUT/ZSirCapture-test-only-${{ matrix.edition }}-${{ github.sha }}.zip"
+      - name: Upload successful test app (not a release)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-only-macos-${{ matrix.edition }}-${{ github.sha }}
+          path: ${{ env.TEST_OUTPUT }}/ZSirCapture-test-only-*.zip
+          if-no-files-found: error
+          retention-days: 7
+      - name: Upload native validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-only-logs-macos-${{ matrix.edition }}-${{ github.sha }}
+          path: ${{ env.TEST_OUTPUT }}/logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+  windows:
+    name: Windows native compile
+    runs-on: windows-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Compile Windows app and portable check harness
+        run: |
+          set -euo pipefail
+          mkdir -p validation-logs
+          dotnet build clients/windows/ZSirCapture.Windows.csproj -p:EnableWindowsTargeting=true --nologo 2>&1 | tee validation-logs/windows-build.log
+          dotnet build script/tests/RecordingOptionsChecks/RecordingOptionsChecks.csproj --nologo 2>&1 | tee validation-logs/options-build.log
+      - name: Upload Windows compile logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-only-logs-windows-${{ github.sha }}
+          path: validation-logs/
+          if-no-files-found: warn
+          retention-days: 14
+
+  portable:
+    name: Linux portable checks and timeline fixtures
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Run Python and actual RecordingOptions checks
+        run: |
+          set -euo pipefail
+          mkdir -p validation-logs "$RUNNER_TEMP/recording-options-ci"
+          python3 -m unittest discover -s script/tests -v 2>&1 | tee validation-logs/python-tests.log
+          XDG_DATA_HOME="$RUNNER_TEMP/recording-options-ci" dotnet run --project script/tests/RecordingOptionsChecks/RecordingOptionsChecks.csproj 2>&1 | tee validation-logs/options-checks.log
+      - name: Install synthetic fixture encoder
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Validate encoded positive and negative fixtures
+        run: |
+          set -euo pipefail
+          ffmpeg -v error -f lavfi -i testsrc2=size=160x90:rate=30 -f lavfi -i sine=frequency=1000:sample_rate=48000 -t 2 -c:v libx264 -c:a aac -y "$RUNNER_TEMP/cfr.mp4"
+          python3 script/check-recording-timeline.py "$RUNNER_TEMP/cfr.mp4" --require-audio --require-zero-start | tee validation-logs/timeline-cfr.json
+          ffmpeg -v error -f lavfi -i testsrc2=size=160x90:rate=24 -t 2 -c:v libx264 -y "$RUNNER_TEMP/24fps.mp4"
+          set +e
+          python3 script/check-recording-timeline.py "$RUNNER_TEMP/24fps.mp4" > validation-logs/timeline-negative.json
+          negative_status=$?
+          set -e
+          cat validation-logs/timeline-negative.json
+          test "$negative_status" -eq 1
+      - name: Upload portable validation logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-only-logs-portable-${{ github.sha }}
+          path: validation-logs/
+          if-no-files-found: warn
+          retention-days: 14

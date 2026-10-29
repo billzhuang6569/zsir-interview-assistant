@@ -21,6 +21,10 @@ foreach($tool in @($ffmpeg,$ffprobe)){
     & $tool -version
     if($LASTEXITCODE -ne 0){throw "Bundled tool cannot run: $tool"}
 }
+$previewGate=& $ffmpeg -hide_banner -h filter=select 2>&1
+if($LASTEXITCODE -ne 0 -or ($previewGate -join "`n") -notmatch 'ZSir preview gate v1\.'){
+    throw 'Bundled FFmpeg is missing the required preview production gate'
+}
 # Exercise actual encoders, muxer and decoder, rather than just checking file presence.
 $sample=Join-Path $stage 'package-check.mp4'
 & $ffmpeg -v error -nostdin -n -f lavfi -i 'color=c=black:s=64x64:r=30' -f lavfi -i 'anullsrc=r=48000:cl=stereo' -t 1 -c:v libx264 -pix_fmt yuv420p -c:a aac $sample

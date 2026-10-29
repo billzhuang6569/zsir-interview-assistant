@@ -1,0 +1,80 @@
+{
+  "observed_at_utc": "2026-10-29T10:29:07.111877+00:00",
+  "base_commit": "580010dee67f5417db35f34743cb856028c5abcc",
+  "scope": "Swift frontend syntax parsing only; no Apple SDK type checking or macOS framework build",
+  "passed": true,
+  "files": [
+    {
+      "file": "clients/macos/Checks/RecordingCoreChecks.swift",
+      "sha256": "1cdbf6cfc65d5f4befb14756704b2416bbc72da4bc582d3a5b8c758e05048a63",
+      "passed": true,
+      "diagnostics": ""
+    },
+    {
+      "file": "clients/macos/ContractChecks/main.swift",
+      "sha256": "699a564c11b301ea2e0e9dba1546c3e58c525694e99ced68e30df3254276027c",
+      "passed": true,
+      "diagnostics": ""
+    },
+    {
+      "file": "clients/macos/Sources/RecordingCore/MovieWriter.swift",
+      "sha256": "6d415e67c2dca1de0bf74686ed13e57696b7e186594b41d25627d5e70ef997c6",
+      "passed": true,
+      "diagnostics": ""
+    },
+    {
+      "file": "clients/macos/Sources/RecordingCore/RecordingContract.swift",
+      "sha256": "16d0a29f62272ba609d334710785ec8360804c4c158ed60674e373aef01b0371",
+      "passed": true,
+      "diagnostics": ""
+    },
+    {
+      "file": "clients/macos/Sources/RecordingCore/RecordingProfile.swift",
+      "sha256": "50acae210b91a1f30dc4dc5c7dcd0476581b8267b1db85be5aaff339a0c4100d",
+      "passed": true,
+      "diagnostics": ""
+    },
+    {
+      "file": "clients/macos/Sources/ZSirCapture/App.swift",
+      "sha256": "dbe08c6eaa9b761af1b72c694adef834367fef5519c8372f9e015c253bacbeb1",
+      "passed": true,
+      "diagnostics": ""
+    },
+    {
+      "file": "clients/macos/Sources/ZSirCapture/CaptureEngine.swift",
+      "sha256": "a6b2f9d6a02f98aebf894ec88a331beacf356379877b6f559c1c6adb7156837f",
+      "passed": true,
+      "diagnostics": ""
+    },
+    {
+      "file": "clients/macos/Sources/ZSirCapture/CaptureSettings.swift",
+      "sha256": "172eb13ebe643e362c6b135d9aee8ea35f2661ec17decaa2f8f05a1a16167e49",
+      "passed": true,
+      "diagnostics": ""
+    },
+    {
+      "file": "clients/macos/Sources/ZSirCapture/CaptureView.swift",
+      "sha256": "9a41f67ccc9c0e558c9b3f1bcace2c48370159ad3203e8645d91b91a6ad1e76d",
+      "passed": true,
+      "diagnostics": ""
+    },
+    {
+      "file": "clients/macos/Sources/ZSirCapture/LiveVideoPreview.swift",
+      "sha256": "d3de6c80b9f2e8525f4bc9cb6129e215e6fe1cdbaed00b0e0fa52b5fc12d961f",
+      "passed": true,
+      "diagnostics": ""
+    },
+    {
+      "file": "clients/macos/Sources/ZSirCapture/RecordingEdgeController.swift",
+      "sha256": "b0f66c8521b583dae2a9d2b61434ada17210ead831365be18780d0582bd5572d",
+      "passed": true,
+      "diagnostics": ""
+    },
+    {
+      "file": "script/tests/RecordingProfileChecks/main.swift",
+      "sha256": "3525318184db40e5724f9ed3252e88dc329f2c72abd5fc91d99cbc9f0973a05a",
+      "passed": true,
+      "diagnostics": ""
+    }
+  ]
+}

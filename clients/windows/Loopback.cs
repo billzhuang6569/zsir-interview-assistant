@@ -52,8 +52,12 @@ internal sealed class AudioFile : IDisposable
 internal sealed class Loopback
 {
     volatile bool stopping;
+    bool requested;
+    double stopQpc;
     readonly TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
     readonly TaskCompletionSource completed = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    internal bool IsActive => requested && !completed.Task.IsCompleted;
+    internal Task Cleanup => requested ? completed.Task : Task.CompletedTask;
     public double OriginQpc { get; private set; }
     public double OriginUnix { get; private set; }
     public string DeviceName { get; private set; } = "";
@@ -65,12 +69,23 @@ internal sealed class Loopback
     public Exception? Failure { get; private set; }
     public Task StartAsync(string path, string deviceId)
     {
+        requested = true;
         var thread = new Thread(() => Capture(path, deviceId)) { IsBackground = true, Name = "WASAPI loopback" };
         thread.SetApartmentState(ApartmentState.MTA);
         thread.Start();
         return started.Task;
     }
-    public async Task StopAsync() { stopping = true; await completed.Task; }
+    public async Task StopAsync()
+    {
+        if (!requested) return;
+        if (!stopping) { stopQpc = Clock.Qpc; stopping = true; }
+        try { await completed.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
+        catch (TimeoutException)
+        {
+            Failure ??= new IOException("系统声音未在 10 秒内结束，原始音频文件已保留");
+            throw Failure;
+        }
+    }
     void Capture(string path, string deviceId)
     {
         IMMDeviceEnumerator? enumerator = null; IMMDevice? device = null;
@@ -104,10 +119,11 @@ internal sealed class Loopback
             CoreAudio.Check(client.Start()); running = true;
             started.TrySetResult();
             var flush = Stopwatch.StartNew();
+            byte[] bytes = new byte[checked(Rate * alignment)];
             while (true)
             {
                 CoreAudio.Check(capture.GetNextPacketSize(out uint available));
-                while (available > 0)
+                while (available > 0 && !stopping)
                 {
                     CoreAudio.Check(capture.GetBuffer(out var data, out var frames, out var flags, out _, out var qpc));
                     try
@@ -117,10 +133,12 @@ internal sealed class Loopback
                         long target = (long)Math.Round((qpc / 10_000_000.0 - OriginQpc) * Rate);
                         if (Math.Abs(target / (double)Rate - (Clock.Qpc - OriginQpc)) > 5)
                             throw new InvalidOperationException("系统声音时钟偏移异常");
-                        byte[] bytes = new byte[checked((int)frames * alignment)];
-                        if ((flags & 2) == 0) Marshal.Copy(data, bytes, 0, bytes.Length);
+                        int lengthBytes = checked((int)frames * alignment);
+                        if (lengthBytes > bytes.Length) throw new IOException("系统声音单包超过 1 秒缓冲预算");
+                        if ((flags & 2) == 0) Marshal.Copy(data, bytes, 0, lengthBytes);
+                        else Array.Clear(bytes, 0, lengthBytes);
                         float peak = 0;
-                        for (int i = 0; i < bytes.Length; i += bits / 8)
+                        for (int i = 0; i < lengthBytes; i += bits / 8)
                         {
                             float sample = floating ? BitConverter.ToSingle(bytes, i) : BitConverter.ToInt16(bytes, i) / 32768f;
                             if (float.IsFinite(sample)) peak = Math.Max(peak, Math.Abs(sample));
@@ -139,7 +157,7 @@ internal sealed class Loopback
                 Thread.Sleep(5);
             }
             CoreAudio.Check(client.Stop()); running = false;
-            file.PadTo((long)Math.Ceiling((Clock.Qpc - OriginQpc) * Rate));
+            file.PadTo((long)Math.Ceiling(((stopping ? stopQpc : Clock.Qpc) - OriginQpc) * Rate));
         }
         catch (Exception ex) { Failure = ex; started.TrySetException(ex); }
         finally

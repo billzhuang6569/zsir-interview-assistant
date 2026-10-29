@@ -1,0 +1,25 @@
+{
+  "visible": {
+    "jpegs": 28,
+    "frames": 75
+  },
+  "hiddenStart": {
+    "jpegs": 29,
+    "frames": 112
+  },
+  "hiddenEnd": {
+    "jpegs": 29,
+    "frames": 203
+  },
+  "resumed": {
+    "jpegs": 47,
+    "frames": 264
+  },
+  "exitCode": 0,
+  "packets": 283,
+  "duration": "9.433333",
+  "cfrPtsPassed": true,
+  "platform": "macOS arm64, native temporary FFmpeg build",
+  "scope": "Same fixed FFmpeg source and archived f_select.c patch; synthetic lavfi input. Not Windows device, Desktop Duplication, Media Foundation, or ARM64 guest acceptance.",
+  "selectSourceSHA256": "303f69814bd1e1270953fc7490c00981e22e0e597557a53b0434733b64d70be5"
+}

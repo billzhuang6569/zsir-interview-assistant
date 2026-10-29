@@ -139,7 +139,7 @@ final class UpdateTransport: NSObject, URLSessionTaskDelegate, @unchecked Sendab
     }
     func start() {
         guard !RecordingCapabilities.macOS12Edition, timer == nil else { return }
-        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in Task { @MainActor in await self?.check(manual: false) } }
+        timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in Task { @MainActor [weak self] in await self?.check(manual: false) } }
         Task { await check(manual: false) }
     }
     func check(manual: Bool = true, newSource: String? = nil) async {

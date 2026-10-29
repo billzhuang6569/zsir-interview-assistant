@@ -13,7 +13,7 @@ internal sealed class MainForm : Form
     readonly Button action = new() { Text = "开始录制", AutoSize = true, BackColor = Color.FromArgb(232, 93, 46), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
     readonly Button refresh = new() { Text = "刷新设备", AutoSize = true };
     readonly Button folder = new() { Text = "更改保存位置", AutoSize = true };
-    readonly Button fold = new() { Text = "收起预览  ∧", AutoSize = true, FlatStyle = FlatStyle.Flat };
+    readonly Button fold = new() { Text = "实时预览  ∧", AutoSize = true, FlatStyle = FlatStyle.Flat };
     readonly Label state = new() { Text = "准备就绪", AutoSize = true, Font = new("Microsoft YaHei UI", 12, FontStyle.Bold) };
     readonly Label detail = new() { Text = "桌面 + 系统声音 · 仅保存在本机", AutoSize = true };
     readonly Label clock = new() { Text = "00:00:00", AutoSize = true, Visible = false, Font = new("Consolas", 22, FontStyle.Bold), ForeColor = Color.FromArgb(255, 137, 106) };
@@ -34,6 +34,10 @@ internal sealed class MainForm : Form
     Recorder? recorder;
     bool busy, recording, excluded, previewVisible = true;
     int pendingPreview;
+    readonly SemaphoreSlim idlePreviewGate = new(1, 1);
+    IdlePreview? idlePreview;
+    int idlePreviewGeneration;
+    DateTime nextIdlePreviewAttempt;
     public bool IsRecording => recording;
     public bool IsBusy => busy;
     public Recorder? CurrentRecorder => recorder;
@@ -51,13 +55,13 @@ internal sealed class MainForm : Form
         Font = new("Microsoft YaHei UI", 9);
         BackColor = Color.FromArgb(29, 31, 38); ForeColor = Ink;
         DoubleBuffered = true;
-        FormBorderStyle = FormBorderStyle.None; MaximizeBox = false; TopMost = true;
+        FormBorderStyle = FormBorderStyle.None; ControlBox = false; MinimizeBox = false; MaximizeBox = false; TopMost = true;
         StartPosition = FormStartPosition.Manual; AutoScaleMode = AutoScaleMode.Dpi;
         ClientSize = new(352, 380);
         detail.MaximumSize = sound.MaximumSize = new Size(320, 0);
         detail.ForeColor = sound.ForeColor = Muted;
         state.Font = new Font(Font.FontFamily, 12, FontStyle.Bold);
-        preview.Paint += (_, e) => { if (preview.Image == null) TextRenderer.DrawText(e.Graphics, "开始后显示桌面画面", Font, preview.ClientRectangle, Color.LightGray, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter); };
+        preview.Paint += (_, e) => { if (preview.Image == null) TextRenderer.DrawText(e.Graphics, "正在加载桌面预览", Font, preview.ClientRectangle, Color.LightGray, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter); };
         var area = Screen.PrimaryScreen!.WorkingArea; Location = new(area.Right - Width - 16, area.Top + 16);
         layout.BackColor = Color.Transparent;
         layout.ColumnStyles.Add(new(SizeType.Percent, 100));
@@ -69,7 +73,7 @@ internal sealed class MainForm : Form
         minimize.Click += (_, _) => WindowState = FormWindowState.Minimized;
         close.Click += (_, _) => Close();
         MouseEventHandler drag = (_, e) => { if (e.Button == MouseButtons.Left) { ReleaseCapture(); SendMessage(Handle, 0xA1, (IntPtr)2, IntPtr.Zero); } };
-        title.MouseDown += drag; name.MouseDown += drag;
+        title.MouseDown += drag; name.MouseDown += drag; mark.MouseDown += drag;
         title.Controls.AddRange([mark, name, minimize, close]);
         layout.Controls.Add(title); layout.Controls.Add(state); layout.Controls.Add(clock); layout.Controls.Add(detail);
         var devices = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Top, ColumnCount = 2, BackColor = Color.Transparent, Margin = new Padding(0, 10, 0, 6) };
@@ -113,7 +117,11 @@ internal sealed class MainForm : Form
         action.Click += async (_, _) => { if (recording) await StopRecordingAsync(); else if (!busy) await StartRecordingAsync(); };
         timer.Tick += async (_, _) =>
         {
+            if (!recording && !busy && recorder != null && !recorder.CleanupPending)
+            { recorder = null; SetControls(true); }
+            if (!busy && recorder?.CleanupPending != true) await UpdateIdlePreviewAsync();
             if (!recording || recorder == null) return;
+            recorder.PreviewEnabled = previewVisible && Visible && WindowState != FormWindowState.Minimized && !edge.IsDocked;
             clock.Text = FormatTimecode(recorder.Seconds);
             detail.Text = "正在写入本机 · 15 秒无操作后收起";
             sound.Text = !options.SystemAudio ? "系统声音已关闭" : recorder.Peak > .001 ? "●  收到系统声音" : "○  系统声音静音 · 时长正常保留";
@@ -129,11 +137,13 @@ internal sealed class MainForm : Form
             excluded = SetWindowDisplayAffinity(Handle, 0x11);
             if (!excluded) { action.Enabled = false; state.Text = "无法排除录制小窗"; detail.Text = "请使用 Windows 10 2004 或更新版本"; }
         };
+        VisibleChanged += async (_, _) => { if (recorder != null) recorder.PreviewEnabled = previewVisible && Visible && WindowState != FormWindowState.Minimized; await UpdateIdlePreviewAsync(); };
+        Resize += async (_, _) => await UpdateIdlePreviewAsync();
         FormClosing += (_, e) =>
         {
             if (busy) { e.Cancel = true; if (!Automation) MessageBox.Show(this, "请先停止录制并等待保存完成，再关闭窗口。", "正在处理素材"); }
         };
-        FormClosed += (_, _) => { timer.Dispose(); edge.Dispose(); preview.Image?.Dispose(); };
+        FormClosed += (_, _) => { timer.Dispose(); idlePreview?.Dispose(); idlePreview = null; edge.Dispose(); preview.Image?.Dispose(); };
         try { if (File.Exists(preference)) { string saved = File.ReadAllText(preference).Trim(); if (Path.IsPathFullyQualified(saved)) root = saved; } RefreshDevices(); }
         catch (Exception ex) { ShowError(ex); }
         timer.Start();
@@ -152,7 +162,10 @@ internal sealed class MainForm : Form
         var estimate = new Label { AutoSize = true, MaximumSize = new(620, 0) };
         void Estimate() {
             var screen = Screen.AllScreens.FirstOrDefault(x => x.DeviceName == options.ScreenId);
-            estimate.Text = screen == null ? "所选屏幕已断开，请重新选择" : $"{screen.Bounds.Width} × {screen.Bounds.Height} · {RecordingOptions.BitRate(options.Quality, screen.Bounds.Width, screen.Bounds.Height) / 1_000_000.0:0.#} Mbps · 成品约 {(RecordingOptions.BitRate(options.Quality, screen.Bounds.Width, screen.Bounds.Height) / 1_000_000.0 + (options.SystemAudio ? .192 : 0)) * .45:0.0} GB/小时\nWindows 保留中间素材，实际磁盘占用高于成品。";
+            if (screen == null) { estimate.Text = "所选屏幕已断开，请重新选择"; return; }
+            var target = RecordingOptions.OutputSize(options.OutputProfile, screen.Bounds.Width, screen.Bounds.Height);
+            double megabits = RecordingOptions.BitRate(options.Quality, target.Width, target.Height) / 1_000_000.0;
+            estimate.Text = $"输出 {target.Width} × {target.Height} · {RecordingOptions.FramesPerSecond} fps · {megabits:0.#} Mbps · 成品约 {(megabits + (options.SystemAudio ? .192 : 0)) * .45:0.0} GB/小时\nWindows 保留中间素材，实际磁盘占用高于成品。";
         }
         void FillScreens() {
             foreach (Control c in cards.Controls.Cast<Control>().ToArray()) { if (c is Button b) b.Image?.Dispose(); c.Dispose(); }
@@ -177,25 +190,113 @@ internal sealed class MainForm : Form
         audioChoice.SelectedItem = outputs.SelectedItem; content.Controls.Add(audioChoice);
         audioChoice.SelectedIndexChanged += (_, _) => { options.AudioId = (audioChoice.SelectedItem as AudioDevice)?.Id ?? ""; options.Save(); RefreshDevices(); };
         captureAudio.CheckedChanged += (_, _) => { options.SystemAudio = captureAudio.Checked; audioChoice.Enabled = options.SystemAudio; options.Save(); Estimate(); };
+        content.Controls.Add(new Label { Text = "输出尺寸 · 固定 30 fps，保持比例，不放大", AutoSize = true, Padding = new(0, 14, 0, 0) });
+        var outputSize = new ComboBox { Width = 620, DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "输出尺寸" };
+        outputSize.Items.AddRange(["均衡 · 最长边 1920 像素", "1440p · 最长边 2560 像素", "原始尺寸"]);
+        string[] profiles = ["balanced", "detailed", "native"];
+        int profileIndex = Array.IndexOf(profiles, options.OutputProfile);
+        outputSize.SelectedIndex = profileIndex >= 0 ? profileIndex : 2;
+        outputSize.SelectedIndexChanged += (_, _) => { options.OutputProfile = profiles[outputSize.SelectedIndex]; options.Save(); Estimate(); };
+        content.Controls.Add(outputSize);
         content.Controls.Add(new Label { Text = "画质", AutoSize = true, Padding = new(0, 14, 0, 0) });
-        var quality = new ComboBox { Width = 620, DropDownStyle = ComboBoxStyle.DropDownList };
+        var quality = new ComboBox { Width = 620, DropDownStyle = ComboBoxStyle.DropDownList, AccessibleName = "画质" };
         quality.Items.AddRange(["省空间", "标准 · 推荐", "高画质"]);
         string[] levels = ["compact", "standard", "high"]; quality.SelectedIndex = Math.Max(0, Array.IndexOf(levels, options.Quality));
         quality.SelectedIndexChanged += (_, _) => { options.Quality = levels[quality.SelectedIndex]; options.Save(); Estimate(); };
         content.Controls.Add(quality); content.Controls.Add(estimate); Estimate();
         var refreshDevices = new Button { Text = "重新检测设备", AutoSize = true };
         refreshDevices.Click += (_, _) => { FillScreens(); Estimate(); }; content.Controls.Add(refreshDevices);
+        var recover = new Button { Text = "扫描并恢复未完成素材的副本", AutoSize = true };
+        bool recovering = false;
+        dialog.FormClosing += (_, e) => { if (recovering) e.Cancel = true; };
+        recover.Click += async (_, _) => {
+            if (busy) return;
+            busy = recovering = true;
+            SetControls(false); content.Enabled = false;
+            var recoveryRecorder = new Recorder(tools);
+            try {
+                await StopIdlePreviewAsync();
+                var recovered = await recoveryRecorder.RecoverUnfinishedAsync(root);
+                MessageBox.Show(dialog, recovered.Length == 0 ? "未找到可恢复的未完成素材。正在录制的目录会跳过。" : $"已生成 {recovered.Length} 份恢复副本。请在素材目录的 Recovery 文件夹检查音画。原素材保留。", "素材恢复");
+            } catch (Exception ex) { MessageBox.Show(dialog, ex.Message, "恢复未完成，原素材保留"); }
+            finally {
+                busy = recovering = false; content.Enabled = true;
+                if (recoveryRecorder.CleanupPending) {
+                    recorder = recoveryRecorder; state.Text = "素材需要检查";
+                    detail.Text = "恢复进程尚未退出，暂不可再次录制或恢复。可退出后重新打开。";
+                    content.Enabled = false;
+                }
+                SetControls(true);
+            }
+        };
+        content.Controls.Add(recover);
         var done = new Button { Text = "完成", AutoSize = true, BackColor = Color.FromArgb(255, 102, 38) }; done.Click += (_, _) => dialog.Close(); content.Controls.Add(done);
         dialog.FormClosed += (_, _) => { foreach (Button card in cards.Controls) card.Image?.Dispose(); };
         dialog.ShowDialog(this);
+        _ = UpdateIdlePreviewAsync();
+    }
+
+    async Task StopIdlePreviewAsync()
+    {
+        await idlePreviewGate.WaitAsync();
+        try { await StopIdlePreviewCoreAsync(); }
+        finally { idlePreviewGate.Release(); }
+    }
+    async Task StopIdlePreviewCoreAsync()
+    {
+        var current = idlePreview;
+        if (current == null) return;
+        idlePreviewGeneration++;
+        idlePreview = null;
+        try { await current.StopAsync(); }
+        finally { current.Dispose(); }
+    }
+    async Task UpdateIdlePreviewAsync()
+    {
+        // Timer and visibility changes may overlap while the process is exiting.
+        if (!await idlePreviewGate.WaitAsync(0)) return;
+        try
+        {
+            var screen = Screen.AllScreens.FirstOrDefault(x => x.DeviceName == options.ScreenId);
+            bool wanted = !IsDisposed && !Disposing && !busy && recorder?.CleanupPending != true && Visible && previewVisible && WindowState != FormWindowState.Minimized && !edge.IsDocked && screen != null;
+            if (idlePreview != null && (!wanted || idlePreview.Bounds != screen!.Bounds || idlePreview.HasExited))
+                await StopIdlePreviewCoreAsync();
+            if (!wanted || IsDisposed || Disposing || busy || !Visible || !previewVisible || WindowState == FormWindowState.Minimized || idlePreview != null || DateTime.UtcNow < nextIdlePreviewAttempt) return;
+            nextIdlePreviewAttempt = DateTime.UtcNow.AddSeconds(5);
+            int generation = ++idlePreviewGeneration;
+            idlePreview = new IdlePreview(tools, screen!.Bounds, bytes =>
+            {
+                if (IsDisposed || busy || Interlocked.Exchange(ref pendingPreview, 1) != 0) return;
+                try
+                {
+                    BeginInvoke((Action)(() =>
+                    {
+                        try
+                        {
+                            if (IsDisposed || busy || generation != idlePreviewGeneration || !Visible || !previewVisible || WindowState == FormWindowState.Minimized) return;
+                            using var input = new MemoryStream(bytes); using var image = Image.FromStream(input);
+                            var old = preview.Image; preview.Image = new Bitmap(image); old?.Dispose();
+                            fold.Text = "实时预览  ∧";
+                        }
+                        catch (ArgumentException) { }
+                        finally { Interlocked.Exchange(ref pendingPreview, 0); }
+                    }));
+                }
+                catch (InvalidOperationException) { Interlocked.Exchange(ref pendingPreview, 0); }
+            });
+        }
+        catch (Exception ex) when (ex is IOException or System.ComponentModel.Win32Exception or InvalidOperationException or TimeoutException)
+        { /* Preview availability must never block recording; retry is bounded. */ }
+        finally { idlePreviewGate.Release(); }
     }
 
     void TogglePreview()
     {
         previewVisible = !previewVisible;
         preview.Visible = previewVisible;
-        fold.Text = previewVisible ? (recording ? "实时预览  ∧" : preview.Image != null ? "上次录制画面  ∧" : "收起预览  ∧") : "展开预览  ∨";
+        fold.Text = previewVisible ? "实时预览  ∧" : "展开预览  ∨";
         if (recorder != null) recorder.PreviewEnabled = previewVisible;
+        _ = UpdateIdlePreviewAsync();
         FitContent();
     }
     void FitContent()
@@ -276,10 +377,11 @@ internal sealed class MainForm : Form
     public void SetTestOutput(string directory) { if (busy) throw new InvalidOperationException(); root = directory; }
     public async Task StartRecordingAsync()
     {
-        if (busy) return;
+        if (busy || recorder?.CleanupPending == true) return;
         LastError = null; clock.Text = "00:00:00"; clock.Visible = false; busy = true; SetControls(false); state.Text = "正在准备…";
         try
         {
+            await StopIdlePreviewAsync();
             if (!excluded) throw new InvalidOperationException("小窗排除设置未成功，取消录制");
             RefreshDevices();
             string id = options.ScreenId;
@@ -309,15 +411,16 @@ internal sealed class MainForm : Form
                 catch (InvalidOperationException) { Interlocked.Exchange(ref pendingPreview, 0); }
             };
             var previous = preview.Image; preview.Image = null; previous?.Dispose();
-            await current.StartAsync(root, screen.Bounds, audioDevice?.Id ?? "", options.Quality, options.SystemAudio);
+            await current.StartAsync(root, screen.Bounds, audioDevice?.Id ?? "", options.Quality, options.SystemAudio, options.OutputProfile);
             lastFolder = current.Folder; recording = true; clock.Visible = true; edge.ResetIdle();
             state.Text = "● 正在录制"; state.ForeColor = Color.FromArgb(255, 137, 106);
             action.Text = "■  停止并保存"; action.Enabled = true; fold.Text = previewVisible ? "实时预览  ∧" : "展开实时预览  ∨"; FitContent();
         }
         catch (Exception ex)
         {
-            lastFolder = recorder?.Folder; recorder = null; busy = false;
-            SetThreadExecutionState(0x80000000); SetControls(true); state.Text = "未能开始"; ShowError(ex);
+            lastFolder = recorder?.Folder; if (recorder?.CleanupPending != true) recorder = null; busy = false;
+            SetThreadExecutionState(0x80000000); SetControls(true); state.Text = recorder?.CleanupPending == true ? "素材需要检查" : "未能开始"; ShowError(ex);
+            if (recorder?.CleanupPending == true) { detail.Text = "后台资源尚未释放，暂不可再次录制。可退出后重新打开恢复原素材。"; FitContent(); }
         }
     }
     public async Task StopRecordingAsync(string? reason = null)
@@ -335,12 +438,13 @@ internal sealed class MainForm : Form
         catch (Exception ex) { state.Text = "素材需要检查"; ShowError(ex); }
         finally
         {
-            busy = false; recorder = null; SetThreadExecutionState(0x80000000); SetControls(true);
+            busy = false; if (!current.CleanupPending) recorder = null; SetThreadExecutionState(0x80000000); SetControls(true);
             action.Text = "开始录制"; state.ForeColor = Ink; sound.Text = "原始素材已保留，可在目录中查看";
+            if (current.CleanupPending) detail.Text = "素材需要检查；后台资源尚未释放，暂不可再次录制。可退出后重新打开恢复原素材。";
             fold.Text = previewVisible ? "上次录制画面  ∧" : "展开上次画面  ∨"; FitContent();
         }
     }
-    void SetControls(bool enabled) { settingsButton.Enabled = screens.Enabled = outputs.Enabled = folder.Enabled = refresh.Enabled = enabled; action.Enabled = enabled && excluded; }
+    void SetControls(bool enabled) { enabled &= recorder?.CleanupPending != true; settingsButton.Enabled = screens.Enabled = outputs.Enabled = folder.Enabled = refresh.Enabled = enabled; action.Enabled = enabled && excluded; }
     void ShowError(Exception ex) { edge.Reveal(false); LastError = ex; detail.Text = ex.Message; FitContent(); if (!Automation) MessageBox.Show(this, ex.Message, "录制提示", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
     protected override void WndProc(ref Message message)
     {

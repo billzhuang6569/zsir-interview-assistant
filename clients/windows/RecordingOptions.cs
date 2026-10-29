@@ -6,7 +6,16 @@ internal sealed class RecordingOptions
     public string ScreenId { get; set; } = "";
     public string AudioId { get; set; } = "";
     public string Quality { get; set; } = "standard";
+    public string OutputProfile { get; set; } = "balanced";
     public bool SystemAudio { get; set; } = true;
+    internal const int FramesPerSecond = 30;
+    internal static (int Width, int Height) OutputSize(string profile, int width, int height)
+    {
+        if (width < 2 || height < 2 || width > 32768 || height > 32768) throw new ArgumentOutOfRangeException(nameof(width));
+        int longestEdge = profile switch { "balanced" => 1920, "detailed" => 2560, _ => Math.Max(width, height) };
+        double scale = Math.Min(1, (double)longestEdge / Math.Max(width, height));
+        return (Math.Max(2, (int)(width * scale) / 2 * 2), Math.Max(2, (int)(height * scale) / 2 * 2));
+    }
     internal static int BitRate(string quality, int width, int height)
     {
         if (width < 2 || height < 2 || width > 32768 || height > 32768) throw new ArgumentOutOfRangeException(nameof(width));
@@ -19,7 +28,15 @@ internal sealed class RecordingOptions
     internal static RecordingOptions Load()
     {
         if (!File.Exists(PathName)) return new();
-        try { return JsonSerializer.Deserialize<RecordingOptions>(File.ReadAllText(PathName)) ?? new(); }
+        try
+        {
+            string json = File.ReadAllText(PathName);
+            var result = JsonSerializer.Deserialize<RecordingOptions>(json) ?? new();
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind == JsonValueKind.Object && !document.RootElement.TryGetProperty(nameof(OutputProfile), out _))
+                result.OutputProfile = "native";
+            return result;
+        }
         catch (JsonException) { return new(); }
     }
     internal void Save()
