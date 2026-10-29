@@ -27,7 +27,7 @@ struct LiveVideoPreview: View {
                 } else {
                     VStack(spacing: 7) {
                         Image(systemName: symbol).font(.system(size: 20, weight: .light))
-                        Text(busy ? "等待录制画面" : "开始后显示画面").font(.system(size: 10))
+                        Text(busy ? "等待录制画面" : "等待设备与权限，尚未录制").font(.system(size: 10))
                     }.foregroundStyle(.white.opacity(0.45))
                 }
             }.frame(height: height).clipShape(RoundedRectangle(cornerRadius: 8))

@@ -1,0 +1,32 @@
+{
+  "passed": false,
+  "errors": [
+    "video:0: frame 1 PTS 0.041666667 differs from first PTS + n/30",
+    "video:0: frame 0 has non-CFR duration",
+    "video:0: stream duration/count mismatch",
+    "video:0: last frame end/count mismatch"
+  ],
+  "video": [
+    {
+      "stream_index": 0,
+      "decoded_frames": 48,
+      "start_seconds": 0.0,
+      "end_seconds": 2.0,
+      "expected_duration_seconds": 1.6,
+      "first_frame_offset_seconds": 0.0,
+      "time_base": "1/12288",
+      "width": 160,
+      "height": 90
+    }
+  ],
+  "audio": [],
+  "fps": 30,
+  "av_boundary_tolerance_seconds": 0.1,
+  "limits": [
+    "CFR is checked relative to the first PTS; first_frame_offset_seconds reports an initial gap. Use --require-zero-start for the product zero-origin contract.",
+    "PTS cannot identify repeated pixel content or distinguish static capture from synthetic repeats; compare per-Take counters and visual motion evidence.",
+    "Audio checks compare stream boundaries only, not audible sync, internal gaps, sample integrity, or clock drift.",
+    "No audio stream is required unless --require-audio is supplied; selected tracks must be checked against the Take report.",
+    "Decode frames are inspected by ffprobe; this is not a full independent audio/video corruption or device acceptance test."
+  ]
+}

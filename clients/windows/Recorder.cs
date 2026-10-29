@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading.Channels;
 
 namespace ZSirCapture;
 
@@ -13,10 +14,27 @@ internal sealed class Recorder
     Process? process;
     Task? previewTask;
     StreamWriter? log;
+    readonly Channel<string> logLines = Channel.CreateBounded<string>(new BoundedChannelOptions(256) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
+    Task? logTask;
+    long droppedLogLines;
     FileStream? lease;
     double? videoStartUnix;
     double clockOffset;
-    bool stopping;
+    volatile bool stopping;
+    Task<string>? stopTask;
+    readonly object stopGate = new();
+    readonly object processGate = new();
+    long startupCommitBudget;
+    internal Task<string>? Completion { get { lock (stopGate) return stopTask; } }
+    CancellationTokenSource? watchdogCancellation;
+    Task? watchdogTask;
+    long writtenFrames;
+    long duplicatedFrames;
+    long droppedFrames;
+    long lastProgress = Stopwatch.GetTimestamp();
+    string outputProfile = "native";
+    (int Width, int Height) outputSize;
+    readonly int encoderThreads = Math.Clamp(Environment.ProcessorCount / 2, 1, 4);
     bool systemAudio = true;
     string quality = "standard";
     int targetVideoBitRate;
@@ -33,10 +51,14 @@ internal sealed class Recorder
     internal Process? Encoder => process;
     public Recorder(string toolsDirectory) { tools = toolsDirectory; }
 
-    public async Task StartAsync(string root, Rectangle bounds, string audioDevice, string quality = "standard", bool systemAudio = true)
+    public async Task StartAsync(string root, Rectangle bounds, string audioDevice, string quality = "standard", bool systemAudio = true, string outputProfile = "native")
     {
         this.quality = quality; this.systemAudio = systemAudio; captureBounds = bounds;
-        targetVideoBitRate = RecordingOptions.BitRate(quality, bounds.Width, bounds.Height);
+        this.outputProfile = outputProfile;
+        outputSize = RecordingOptions.OutputSize(outputProfile, bounds.Width, bounds.Height);
+        targetVideoBitRate = RecordingOptions.BitRate(quality, outputSize.Width, outputSize.Height);
+        startupCommitBudget = ResourceBudget.EstimateStartup(bounds.Width, bounds.Height, outputSize.Width, outputSize.Height, encoderThreads);
+        ResourceBudget.Check(startupCommitBudget);
         if (Folder != null) throw new InvalidOperationException("每个录制实例只能使用一次");
         foreach (string tool in new[] { "ffmpeg.exe", "ffprobe.exe" })
             if (!File.Exists(Path.Combine(tools, tool))) throw new FileNotFoundException("录制组件缺失，请重新下载完整安装包并完整解压后打开；不要只复制 EXE。已有录制素材不会受影响", tool);
@@ -53,12 +75,16 @@ internal sealed class Recorder
             int width = bounds.Width / 2 * 2, height = bounds.Height / 2 * 2;
             int rate = targetVideoBitRate;
             log = new StreamWriter(Path.Combine(Folder, "capture.log"), false) { AutoFlush = true };
+            logTask = WriteLogAsync();
             process = new Process { StartInfo = StartInfo("ffmpeg.exe", [
                 "-hide_banner", "-n", "-nostats", "-stats_period", "1", "-progress", "pipe:2",
+                "-filter_complex_threads", "1", "-thread_queue_size", "3",
                 "-f", "gdigrab", "-framerate", "30", "-offset_x", N(bounds.X), "-offset_y", N(bounds.Y),
                 "-video_size", $"{width}x{height}", "-i", "desktop",
-                "-filter_complex", "[0:v]split=2[v][p];[p]fps=10,scale=320:-2[pv]",
+                "-filter_complex",  $"[0:v]split=2[raw][p];[raw]scale={outputSize.Width}:{outputSize.Height}[v];[p]fps=10,scale=320:-2[pv]",
                 "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "veryfast", "-b:v", N(rate), "-g", "60", "-bf", "0",
+                "-threads:v", N(encoderThreads), "-x264-params", $"rc-lookahead=10:sync-lookahead=0:threads={encoderThreads}",
+                "-r:v", N(RecordingOptions.FramesPerSecond), "-fps_mode:v", "cfr",
                 "-pix_fmt", "yuv420p", "-flush_packets", "1", "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
                 Path.Combine(Folder, "desktop-video.mp4"),
                 "-map", "[pv]", "-an", "-c:v", "mjpeg", "-q:v", "5", "-f", "image2pipe", "pipe:1"
@@ -68,18 +94,26 @@ internal sealed class Recorder
             {
                 if (e.Data == null) return;
                 string line = e.Data;
-                try { log.WriteLine(line); }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Failure ??= "录制日志写入失败：" + ex.Message; }
+                if (!logLines.Writer.TryWrite(line)) Interlocked.Increment(ref droppedLogLines);
                 var match = Regex.Match(line, @"Duration: N/A, start: ([0-9]+\.[0-9]+)");
                 if (match.Success) videoStartUnix = double.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
                 if (line.StartsWith("out_time_us=") && long.TryParse(line[12..], out long us)) Seconds = us / 1_000_000.0;
-                if (line.StartsWith("frame=") && int.TryParse(line[6..].Trim(), out int frames) && frames > 0) videoReady.TrySetResult();
+                if (line.StartsWith("dup_frames=") && long.TryParse(line[11..], out long duplicates)) Interlocked.Exchange(ref duplicatedFrames, duplicates);
+                if (line.StartsWith("drop_frames=") && long.TryParse(line[12..], out long drops)) Interlocked.Exchange(ref droppedFrames, drops);
+                if (line.StartsWith("frame=") && long.TryParse(line[6..].Trim(), out long frames) && frames > Interlocked.Read(ref writtenFrames))
+                {
+                    Interlocked.Exchange(ref writtenFrames, frames);
+                    Interlocked.Exchange(ref lastProgress, Stopwatch.GetTimestamp());
+                    videoReady.TrySetResult();
+                }
             };
             process.Start(); process.BeginErrorReadLine();
             previewTask = ReadPreviewAsync(process.StandardOutput.BaseStream);
             var exited = process.WaitForExitAsync();
             var first = await Task.WhenAny(videoReady.Task, exited, Task.Delay(15_000));
             if (first != videoReady.Task || !videoStartUnix.HasValue) throw new InvalidOperationException("未能启动桌面采集，请查看 capture.log");
+            watchdogCancellation = new();
+            watchdogTask = WatchHealthAsync(watchdogCancellation.Token);
             Report("recording", new { bounds, audio.Rate, audio.Channels, videoStartUnix, audioStartUnix = audio.OriginUnix });
         }
         catch (Exception ex)
@@ -94,10 +128,18 @@ internal sealed class Recorder
 
     public void CheckHealth()
     {
+        if (Failure != null) throw new IOException(Failure);
         if (stopping) return;
+        ResourceBudget.Check();
+        if (Stopwatch.GetElapsedTime(Interlocked.Read(ref lastProgress)).TotalSeconds > 15)
+            throw new IOException("编码器超过 15 秒没有写入进度，原始素材已保留");
         if (Failure != null) throw new IOException(Failure);
         if (systemAudio && audio.Failure != null) throw new InvalidOperationException("系统声音采集中断：" + audio.Failure.Message);
-        if (process?.HasExited == true) throw new InvalidOperationException("桌面编码进程已退出，原始素材已保留");
+        lock (processGate)
+        {
+            if (stopping) return;
+            if (process?.HasExited == true) throw new InvalidOperationException("桌面编码进程已退出，原始素材已保留");
+        }
         if (Math.Abs(Clock.Unix - Clock.Qpc - clockOffset) > .25) throw new InvalidOperationException("系统时间发生跳变，已停止以避免音画错位");
         if (Folder != null)
         {
@@ -107,10 +149,16 @@ internal sealed class Recorder
         }
     }
 
-    public async Task<string> StopAsync(string? reason = null)
+    public Task<string> StopAsync(string? reason = null)
     {
-        if (stopping || Folder == null) throw new InvalidOperationException("没有可停止的录制");
+        lock (stopGate) return stopTask ??= StopCoreAsync(reason);
+    }
+
+    async Task<string> StopCoreAsync(string? reason)
+    {
+        if (Folder == null) throw new InvalidOperationException("没有可停止的录制");
         stopping = true;
+        watchdogCancellation?.Cancel();
         Failure ??= reason;
         try
         {
@@ -153,8 +201,29 @@ internal sealed class Recorder
         finally { lease?.Dispose(); lease = null; }
     }
 
+    async Task WatchHealthAsync(CancellationToken token)
+    {
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2), token);
+                try { CheckHealth(); }
+                catch (Exception ex)
+                {
+                    Failure ??= ex.Message;
+                    try { await StopAsync(Failure); } catch { /* StopCore persists the recoverable failure. */ }
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
     async Task StopInputsAsync()
     {
+        // Establish the audio stop boundary immediately, before waiting for encoder drain.
+        Task audioStop = systemAudio ? audio.StopAsync() : Task.CompletedTask;
         try
         {
         if (process != null)
@@ -163,23 +232,46 @@ internal sealed class Recorder
             {
                 if (!process.HasExited)
                 {
-                    await process.StandardInput.WriteLineAsync("q"); await process.StandardInput.FlushAsync();
+                    await process.StandardInput.WriteLineAsync("q").WaitAsync(TimeSpan.FromSeconds(2)); await process.StandardInput.FlushAsync().WaitAsync(TimeSpan.FromSeconds(2));
                     try { await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(20)); }
-                    catch (TimeoutException) { process.Kill(entireProcessTree: true); await process.WaitForExitAsync(); Failure ??= "编码进程未及时结束，已保留碎片文件"; }
+                    catch (TimeoutException) { process.Kill(entireProcessTree: true); await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); Failure ??= "编码进程未及时结束，已保留碎片文件"; }
                 }
-                process.WaitForExit();
+                await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
                 if (process.ExitCode != 0) Failure ??= "桌面采集异常退出";
             }
             catch (InvalidOperationException) { /* Process.Start can fail before a process exists. */ }
-            catch (IOException) { Failure ??= "无法正常通知编码器停止"; if (!process.HasExited) { process.Kill(true); await process.WaitForExitAsync(); } }
+            catch (Exception ex) when (ex is IOException or TimeoutException) { Failure ??= "无法正常通知编码器停止"; if (!process.HasExited) { process.Kill(true); await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); } }
             finally
             {
-                if (previewTask != null) await previewTask;
-                process.Dispose(); process = null; log?.Dispose(); log = null;
+                if (previewTask != null)
+                {
+                    try { await previewTask.WaitAsync(TimeSpan.FromSeconds(3)); }
+                    catch (TimeoutException) { process.StandardOutput.Close(); Failure ??= "预览管道未及时结束"; }
+                }
+                lock (processGate) { process.Dispose(); process = null; }
+                logLines.Writer.TryComplete();
+                if (logTask != null)
+                {
+                    try { await logTask.WaitAsync(TimeSpan.FromSeconds(3)); }
+                    catch (TimeoutException) { Failure ??= "日志写入未及时结束"; }
+                }
+                // The log worker owns disposal, including after a timed-out disk write.
+                log = null;
             }
         }
         }
-        finally { if (systemAudio) await audio.StopAsync(); }
+        finally { await audioStop; }
+    }
+
+    async Task WriteLogAsync()
+    {
+        using var writer = log!;
+        try
+        {
+            await foreach (string line in logLines.Reader.ReadAllAsync()) await writer.WriteLineAsync(line);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ObjectDisposedException)
+        { Failure ??= "录制日志写入失败：" + ex.Message; }
     }
 
     async Task ReadPreviewAsync(Stream source)
@@ -195,12 +287,19 @@ internal sealed class Recorder
                     if (!inside && previous == 255 && value == 216) { jpeg.SetLength(0); jpeg.WriteByte(255); inside = true; }
                     if (inside) jpeg.WriteByte((byte)value);
                     if (inside && previous == 255 && value == 217)
-                    { if (PreviewEnabled) Preview?.Invoke(jpeg.ToArray()); inside = false; }
+                    {
+                        if (PreviewEnabled)
+                        {
+                            try { Preview?.Invoke(jpeg.ToArray()); }
+                            catch (Exception) { /* A preview subscriber must not terminate stdout draining or recording. */ }
+                        }
+                        inside = false;
+                    }
                     if (jpeg.Length > 2_000_000) { inside = false; jpeg.SetLength(0); }
                     previous = value;
                 }
         }
-        catch (IOException) { /* EOF during a failed encoder is handled by its exit status. */ }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException) { /* Closed during bounded encoder teardown. */ }
     }
 
     public async Task<JsonElement> ProbeAsync(string path)
@@ -215,7 +314,7 @@ internal sealed class Recorder
         command.Start();
         var output = command.StandardOutput.ReadToEndAsync(); var error = command.StandardError.ReadToEndAsync();
         try { await command.WaitForExitAsync().WaitAsync(timeout); }
-        catch { if (!command.HasExited) { command.Kill(true); await command.WaitForExitAsync(); } throw; }
+        catch { if (!command.HasExited) { command.Kill(true); await command.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5)); } throw; }
         return (command.ExitCode, await output, await error);
     }
     ProcessStartInfo StartInfo(string name, IEnumerable<string> args)
@@ -228,7 +327,7 @@ internal sealed class Recorder
     {
         if (Folder == null) return;
         string path = Path.Combine(Folder, "report.json"), temporary = path + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(new { state, platform = "windows", mode = "desktop", quality, qualityVersion = 1, systemAudio, targetVideoBitRate, captureBounds, device = audio.DeviceName, details, updatedAt = DateTimeOffset.UtcNow }, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(temporary, JsonSerializer.Serialize(new { state, platform = "windows", mode = "desktop", quality, qualityVersion = 1, systemAudio, outputProfile, outputWidth = outputSize.Width, outputHeight = outputSize.Height, framesPerSecond = 30, encoder = "libx264", encoderThreads, resourcePolicy = "experimental unmeasured caps; startup estimate is conservative admission heuristic, not a measured peak guarantee", startupCommitBudgetBytes = startupCommitBudget, runtimeCommitSafetyFloorBytes = ResourceBudget.SafetyFloor, filterThreads = 1, inputQueuePackets = 3, lookaheadFrames = 10, diagnostics = new { droppedLogLines = Interlocked.Read(ref droppedLogLines), writtenFrames = Interlocked.Read(ref writtenFrames), encoderDuplicatedFrames = Interlocked.Read(ref duplicatedFrames), encoderDroppedFrames = Interlocked.Read(ref droppedFrames), capturedFrames = (long?)null, scheduledFrames = (long?)null, note = "FFmpeg output progress only; source admission and queue counters unavailable for gdigrab" }, targetVideoBitRate, captureBounds, device = audio.DeviceName, details, updatedAt = DateTimeOffset.UtcNow }, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(temporary, path, true);
     }
     static string N(object value) => Convert.ToString(value, CultureInfo.InvariantCulture)!;

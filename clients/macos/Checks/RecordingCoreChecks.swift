@@ -11,6 +11,36 @@ final class RecordingCoreChecks {
         return url
     }
 
+    func testBoundedCFRAdmissionAndFirstAvailability() async throws {
+        let root = try temporaryFolder()
+        let saturated = MovieWriter(url: root.appendingPathComponent("saturated.mp4"), epoch: .zero, includesAudio: false)
+        for frame in 0..<3 { try saturated.append(videoSample(at: CMTime(value: Int64(frame), timescale: 30)), isVideo: true) }
+        do {
+            try saturated.append(videoSample(at: CMTime(value: 3, timescale: 30)), isVideo: true)
+            fatalError("Queue accepted a fourth source sample")
+        } catch {}
+        expectEqual(saturated.diagnostics.queueHighWaterMark, 3)
+        expectEqual(saturated.diagnostics.backpressureFrames, 1)
+        do { try saturated.advance(to: CMTime(value: 4, timescale: 30)); fatalError("Overdue scheduler silently skipped ticks") } catch {}
+        expectEqual(saturated.videoSamples, 0)
+        expectEqual(saturated.diagnostics.lateFrames, 5)
+
+        let writer = MovieWriter(url: root.appendingPathComponent("availability.mp4"), epoch: .zero, includesAudio: false)
+        try writer.append(videoSample(at: CMTime(value: 1, timescale: 100)), isVideo: true)
+        try writer.advance(to: .zero)
+        expectEqual(writer.videoSamples, 0) // The future image cannot fill tick zero.
+        try writer.advance(to: CMTime(value: 1, timescale: 30))
+        expectEqual(writer.videoSamples, 1)
+        expectEqual(writer.firstVideoSeconds, 1.0 / 30.0)
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            writer.finish(at: CMTime(value: 2, timescale: 30)) { c.resume(with: $0) }
+        }
+        // A repeated finish observes the same terminal result without touching AVAssetWriter.
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            writer.finish(at: CMTime(value: 99, timescale: 30)) { c.resume(with: $0) }
+        }
+    }
+
     func testQualityAndSilentRecovery() async throws {
         expectEqual(try RecordingQuality.standard.desktopBitRate(width: 1920, height: 1080), 12_000_000)
         expectEqual(try RecordingQuality.high.desktopBitRate(width: 3840, height: 2160), 72_000_000)
@@ -25,6 +55,11 @@ final class RecordingCoreChecks {
             let writer = MovieWriter(url: url, epoch: .zero, videoBitRate: quality.cameraBitRate, includesAudio: false)
             for frame in 0..<20 {
                 try writer.append(videoSample(at: CMTime(value: Int64(frame), timescale: 30)), isVideo: true)
+                try writer.advance(to: CMTime(value: Int64(frame), timescale: 30))
+                try await Task.sleep(nanoseconds: 33_333_333)
+            }
+            for frame in 20..<30 {
+                try writer.advance(to: CMTime(value: Int64(frame), timescale: 30))
                 try await Task.sleep(nanoseconds: 33_333_333)
             }
             try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in writer.finish(at: CMTime(seconds: 1, preferredTimescale: 600)) { c.resume(with: $0) } }
@@ -77,8 +112,13 @@ final class RecordingCoreChecks {
             expectEqual(CMTimeCompare(CMSampleBufferGetPresentationTimeStamp(retimed), time), 0)
             do { try writer.append(retimed, isVideo: true) }
             catch { throw RecordingError("Video frame \(frame): \(error)") }
+            try writer.advance(to: time)
             do { try writer.append(audioSample(at: time), isVideo: false) }
             catch { throw RecordingError("Audio frame \(frame): \(error)") }
+            try await Task.sleep(nanoseconds: 33_333_333)
+        }
+        for frame in 360..<420 {
+            try writer.advance(to: CMTimeAdd(epoch, CMTime(value: Int64(frame), timescale: 30)))
             try await Task.sleep(nanoseconds: 33_333_333)
         }
         print("Synthetic samples written: video=\(writer.videoSamples), audio=\(writer.audioSamples)")
@@ -102,10 +142,14 @@ final class RecordingCoreChecks {
         reader.add(output)
         expect(reader.startReading())
         var count = 0
-        while output.copyNextSampleBuffer() != nil { count += 1 }
+        while let frame = output.copyNextSampleBuffer() {
+            expectEqual(CMTimeCompare(CMSampleBufferGetPresentationTimeStamp(frame), CMTime(value: Int64(count), timescale: 30)), 0)
+            expectEqual(CMTimeCompare(CMSampleBufferGetDuration(frame), CMTime(value: 1, timescale: 30)), 0)
+            count += 1
+        }
         expectEqual(reader.status, .completed)
-        // The end marker at exactly endSession is trimmed; the preceding frame holds to that time.
-        expectEqual(count, writer.videoSamples - 1)
+        expectEqual(count, 420)
+        expectEqual(count, writer.videoSamples)
         let audioReader = try AVAssetReader(asset: asset)
         let audioOutput = AVAssetReaderTrackOutput(track: audios[0], outputSettings: [AVFormatIDKey: kAudioFormatLinearPCM])
         audioReader.add(audioOutput)
@@ -123,6 +167,7 @@ final class RecordingCoreChecks {
         for frame in 0..<30 {
             let time = CMTime(value: Int64(frame), timescale: 30)
             try writer.append(videoSample(at: time, width: 3840, height: 2160), isVideo: true)
+            try writer.advance(to: time)
             try writer.append(audioSample(at: time), isVideo: false)
             try await Task.sleep(nanoseconds: 33_333_333)
         }
@@ -160,7 +205,8 @@ final class RecordingCoreChecks {
                 let time = CMTime(value: Int64(frame), timescale: 30)
                 for writer in writers {
                     try writer.append(videoSample(at: time), isVideo: true)
-                    try writer.append(audioSample(at: time), isVideo: false)
+                    try writer.advance(to: time)
+            try writer.append(audioSample(at: time), isVideo: false)
                 }
                 try await Task.sleep(nanoseconds: 33_333_333)
             }
@@ -202,7 +248,8 @@ final class RecordingCoreChecks {
         for frame in 0..<1800 {
             let time = CMTime(value: Int64(frame), timescale: 30)
             if frame == 0 { try writer.append(videoSample(at: time), isVideo: true) }
-            else { try writer.holdLastFrame(at: time) }
+
+            try writer.advance(to: time)
             try writer.append(audioSample(at: time), isVideo: false)
             if frame == 750 { try Data().write(to: folder.appendingPathComponent("ready")) }
             try await Task.sleep(nanoseconds: 33_333_333)
@@ -315,6 +362,8 @@ func unwrap<T>(_ value: T?) throws -> T {
             return
         }
         defer { for folder in checks.folders { try? FileManager.default.removeItem(at: folder) } }
+        try await checks.testBoundedCFRAdmissionAndFirstAvailability()
+        print("PASS: bounded source admission, late scheduler failure, first availability and repeated finish")
         try await checks.testQualityAndSilentRecovery()
         print("PASS: quality rates, invalid sizes, three silent MP4 files and recovery preserve originals")
         try await checks.testKilledProcessRecoveryPreservesOriginal()

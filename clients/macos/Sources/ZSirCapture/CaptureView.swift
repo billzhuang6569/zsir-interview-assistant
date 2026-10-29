@@ -57,17 +57,20 @@ struct CaptureView: View {
                             .font(.system(size: 9, weight: .semibold)).frame(width: 10)
                         Text(model.previewVisible ? "收起预览" : "展开预览")
                         Spacer()
-                        Text(model.canStop ? "实时画面" : (model.cameraPreview.frame != nil || model.desktopPreview.frame != nil ? "上次录制" : "尚未录制"))
+                        Text(model.canStop || model.idlePreviewLive ? "实时画面" : (model.idlePreviewError == nil ? "等待预览" : "预览不可用"))
                             .foregroundStyle(.tertiary)
                     }.font(.system(size: 11)).contentShape(Rectangle())
                 }.buttonStyle(.plain).foregroundStyle(.secondary)
                 if model.previewVisible {
+                    if let error = model.idlePreviewError, !model.busy {
+                        Text(error).font(.caption).foregroundStyle(.orange)
+                    }
                     HStack(alignment: .top, spacing: 8) {
                         if model.mode.includesCamera {
-                            LiveVideoPreview(feed: model.cameraPreview, title: "摄像头 · 话筒", symbol: "video", height: model.mode == .both ? 86 : 148, recording: model.canStop, busy: model.busy)
+                            LiveVideoPreview(feed: model.cameraPreview, title: "摄像头 · 话筒", symbol: "video", height: model.mode == .both ? 86 : 148, recording: model.canStop || model.idlePreviewLive, busy: model.busy)
                         }
                         if model.mode.includesDesktop {
-                            LiveVideoPreview(feed: model.desktopPreview, title: model.systemAudio ? "桌面 · 系统声音" : "桌面 · 无声音", symbol: "display", height: model.mode == .both ? 86 : 148, recording: model.canStop, busy: model.busy)
+                            LiveVideoPreview(feed: model.desktopPreview, title: model.systemAudio ? "桌面 · 系统声音" : "桌面 · 无声音", symbol: "display", height: model.mode == .both ? 86 : 148, recording: model.canStop || model.idlePreviewLive, busy: model.busy)
                         }
                     }
                 }
@@ -97,11 +100,21 @@ struct CaptureView: View {
                 .onChange(of: geometry.size.height) { height in model.onResize?(height) }
         })
         .preferredColorScheme(.dark).ignoresSafeArea()
+        .task(id: model.idlePreviewID) {
+            await model.updateIdlePreview(enabled: true).value
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            model.updateIdlePreview(enabled: true)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didHideNotification)) { _ in model.setPreviewWindowVisible(false) }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didUnhideNotification)) { _ in model.setPreviewWindowVisible(true) }
+        .onDisappear { model.setPreviewWindowVisible(false) }
         .sheet(isPresented: $model.settingsVisible) { CaptureSettings(model: model).preferredColorScheme(.dark) }
         .sheet(isPresented: $permissions.visible) {
             PermissionSetupView(model: model, setup: permissions).preferredColorScheme(.dark)
         }
         .onAppear {
+            model.setPreviewWindowVisible(true)
             model.scanRecovery()
             permissions.present(for: model.mode, busy: model.busy, firstLaunch: true)
         }

@@ -1,0 +1,25 @@
+{
+  "observed_at_utc": "2026-10-29T10:29:16.360340+00:00",
+  "base_commit": "580010dee67f5417db35f34743cb856028c5abcc",
+  "command": "dotnet build clients/windows/ZSirCapture.Windows.csproj -p:EnableWindowsTargeting=true --nologo",
+  "sdk": "8.0.427",
+  "exit_code": 0,
+  "sources_stable_during_build": true,
+  "passed": true,
+  "source_sha256": {
+    "clients/windows/CoreAudio.cs": "524888157320adcaf63c00d1ee8a86a2bfb84304a8325a2d3543d7a380eae7b5",
+    "clients/windows/IdlePreview.cs": "128f3b007b9a5d330bbd123b2db86007342cb5f0744f998d9f3133f1fb3d0af3",
+    "clients/windows/Loopback.cs": "56ceef731bfc8e3cb62544ea5e2070115d50b9ec8ca43e76b04b1c2c8f63445e",
+    "clients/windows/MainForm.cs": "0857d59332b81a341a808682279b353d273a08f0b048bb7598294b72e027787a",
+    "clients/windows/Program.cs": "2b00b4ab2436cf240ab8d40cf490f9be7324d1dfcc1aa8f7f54bcfb3041e259a",
+    "clients/windows/Recorder.cs": "34f8ed3d0863a0d5af9947ef8e2088777417c2d1ee2aeaa9f29f48e61a8fedeb",
+    "clients/windows/RecordingEdge.cs": "216bbb46eaf7140bff966ef302aa8be0d4efb4418e1fed792b64ceb4129de1e0",
+    "clients/windows/RecordingOptions.cs": "b2209402de28b77d0adc0f9aabc8dcddda8a5c038e628c01336eae1f8bd0d361",
+    "clients/windows/ResourceBudget.cs": "3574dcfa5469645b6593d1ce305e8120b1012f7b3bec285c79b0f94b66401ea6",
+    "clients/windows/SmokeTest.cs": "f42c01a63af69dce11941df34cd4019d936e3340c06708b7b4cae46eaa346986",
+    "clients/windows/ZSirCapture.Windows.csproj": "d5338752339ef6360e1164b96dd1e054b819d3a5ded608a64bd29fdcc484aa3f"
+  },
+  "stdout": "  Determining projects to restore...\n  All projects are up-to-date for restore.\n  ZSirCapture.Windows -> /workspace/zsir-interview-assistant/clients/windows/bin/Debug/net8.0-windows/ZSirCapture.Windows.dll\n\nBuild succeeded.\n    0 Warning(s)\n    0 Error(s)\n\nTime Elapsed 00:00:00.69\n",
+  "stderr": "",
+  "limits": "Linux cross compile only; WinForms and device capture not executed."
+}
