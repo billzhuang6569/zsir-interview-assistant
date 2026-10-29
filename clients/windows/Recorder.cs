@@ -75,7 +75,7 @@ internal sealed class Recorder
             int width = bounds.Width / 2 * 2, height = bounds.Height / 2 * 2;
             int rate = targetVideoBitRate;
             log = new StreamWriter(Path.Combine(Folder, "capture.log"), false) { AutoFlush = true };
-            logTask = WriteLogAsync();
+            logTask = Task.Run(WriteLogAsync);
             process = new Process { StartInfo = StartInfo("ffmpeg.exe", [
                 "-hide_banner", "-n", "-nostats", "-stats_period", "1", "-progress", "pipe:2",
                 "-filter_complex_threads", "1", "-thread_queue_size", "3",
@@ -108,20 +108,30 @@ internal sealed class Recorder
                 }
             };
             process.Start(); process.BeginErrorReadLine();
-            previewTask = ReadPreviewAsync(process.StandardOutput.BaseStream);
+            Stream previewStream = process.StandardOutput.BaseStream;
+            previewTask = Task.Run(() => ReadPreviewAsync(previewStream));
             var exited = process.WaitForExitAsync();
             var first = await Task.WhenAny(videoReady.Task, exited, Task.Delay(15_000));
             if (first != videoReady.Task || !videoStartUnix.HasValue) throw new InvalidOperationException("未能启动桌面采集，请查看 capture.log");
             watchdogCancellation = new();
-            watchdogTask = WatchHealthAsync(watchdogCancellation.Token);
+            watchdogTask = Task.Run(() => WatchHealthAsync(watchdogCancellation.Token));
             Report("recording", new { bounds, audio.Rate, audio.Channels, videoStartUnix, audioStartUnix = audio.OriginUnix });
         }
         catch (Exception ex)
         {
-            Failure = ex.Message;
-            await StopInputsAsync();
-            Report("start_failed", new { error = Failure });
-            lease?.Dispose(); lease = null;
+            Failure ??= ex.Message;
+            stopping = true;
+            watchdogCancellation?.Cancel();
+            string? cleanupError = null;
+            try
+            {
+                try { await StopInputsAsync(); }
+                catch (Exception cleanup) { cleanupError = cleanup.Message; }
+                try { Report("start_failed", new { error = Failure, cleanupError }); }
+                catch (Exception reportError) when (reportError is IOException or UnauthorizedAccessException)
+                { /* Preserve the primary startup failure even if the report disk is unavailable. */ }
+            }
+            finally { lease?.Dispose(); lease = null; }
             throw;
         }
     }

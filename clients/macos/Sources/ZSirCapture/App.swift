@@ -228,7 +228,7 @@ final class CaptureModel: ObservableObject {
 
     func observeDevices() {
         guard deviceObservers.isEmpty else { return }
-        for name in [NSApplication.didChangeScreenParametersNotification, AVCaptureDevice.wasConnectedNotification, AVCaptureDevice.wasDisconnectedNotification] {
+        for name in [NSApplication.didChangeScreenParametersNotification, NSNotification.Name.AVCaptureDeviceWasConnected, NSNotification.Name.AVCaptureDeviceWasDisconnected] {
             deviceObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.refreshDevices() }
             })
@@ -418,7 +418,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.updates.busy = { [weak model] in model?.busy != false }
         model.updates.start()
         updateTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self, let window = self.window, !self.model.permissions.visible, !self.model.settingsVisible else { return }
                 self.model.updates.promptIfNeeded(window: window)
             }

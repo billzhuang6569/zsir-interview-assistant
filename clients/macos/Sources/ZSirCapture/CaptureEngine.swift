@@ -123,7 +123,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     deinit { releaseResources() }
 
     private func watchInterruptions() {
-        for name in [AVCaptureSession.runtimeErrorNotification, AVCaptureSession.wasInterruptedNotification] {
+        for name in [Notification.Name("AVCaptureSessionRuntimeErrorNotification"), Notification.Name("AVCaptureSessionWasInterruptedNotification")] {
             let center = NotificationCenter.default
             let observer = center.addObserver(forName: name, object: session, queue: nil) { [weak self] _ in
                 self?.mediaQueue.async { [weak self] in self?.fail("摄像头或话筒采集被中断，正在保存已有素材") }
@@ -453,7 +453,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                     return
                 }
                 let group = DispatchGroup()
-                var issues = [captureError, stopIssue].compactMap { $0 }
+                let issues = MediaIssues(queue: mediaQueue, values: [captureError, stopIssue].compactMap { $0 })
                 for (name, writer) in writers {
                     if writer.videoSamples == 0 || (writer.includesAudio && writer.audioSamples == 0) {
                         issues.append("\(name) 未收到完整音视频")
@@ -468,8 +468,8 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 }
                 group.notify(queue: mediaQueue) { [self] in
                     let report: [String: Any] = [
-                        "state": issues.isEmpty ? "finalized_unverified" : "needs_review",
-                        "devices": devices, "mode": mode.rawValue, "errors": issues,
+                        "state": issues.values.isEmpty ? "finalized_unverified" : "needs_review",
+                        "devices": devices, "mode": mode.rawValue, "errors": issues.values,
                         "profile": profile.rawValue, "quality": quality.rawValue, "qualityVersion": 1, "systemAudio": systemAudio,
                         "durationSeconds": Date().timeIntervalSince(startedAt),
                         "tracks": Dictionary(uniqueKeysWithValues: writers.map { ($0.0, self.metrics($0.1)) }),
@@ -479,8 +479,8 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                     catch { issues.append("检查报告保存失败：\(error.localizedDescription)") }
                     self.camera = nil
                     self.desktop = nil
-                    if issues.isEmpty { continuation.resume() }
-                    else { continuation.resume(throwing: RecordingError(issues.joined(separator: "\n"))) }
+                    if issues.values.isEmpty { continuation.resume() }
+                    else { continuation.resume(throwing: RecordingError(issues.values.joined(separator: "\n"))) }
                 }
             }
         }
@@ -497,5 +497,20 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
          "includesAudio": writer.includesAudio, "width": writer.width, "height": writer.height, "targetVideoBitRate": writer.videoBitRate,
          "firstVideoSeconds": writer.firstVideoSeconds ?? -1, "lastVideoSeconds": writer.lastVideoSeconds,
          "lastAudioSeconds": writer.lastAudioSeconds]
+    }
+}
+
+/// Finalization aggregation belongs exclusively to mediaQueue, including finish callbacks.
+private final class MediaIssues: @unchecked Sendable {
+    private let queue: DispatchQueue
+    private var storage: [String]
+    init(queue: DispatchQueue, values: [String]) { self.queue = queue; storage = values }
+    var values: [String] {
+        dispatchPrecondition(condition: .onQueue(queue))
+        return storage
+    }
+    func append(_ message: String) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        storage.append(message)
     }
 }
