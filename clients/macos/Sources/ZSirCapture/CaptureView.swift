@@ -82,7 +82,7 @@ struct CaptureView: View {
                     Label(model.canStop ? "停止并保存" : "开始录制", systemImage: model.canStop ? "stop.fill" : "record.circle")
                         .font(.system(size: 12, weight: .semibold)).frame(maxWidth: .infinity).padding(.vertical, 3)
                 }
-                .disabled((model.busy && !model.canStop) || permissions.requesting != nil).buttonStyle(RecorderActionStyle(accent: accent))
+                .disabled((!model.canStop && (model.busy || model.idlePreviewCleaning)) || permissions.requesting != nil).buttonStyle(RecorderActionStyle(accent: accent))
                 Button { model.reveal() } label: { Image(systemName: "folder").frame(width: 20, height: 20) }
                     .help("打开素材目录").accessibilityLabel("打开素材目录")
                 Button { model.openSettings() } label: {

@@ -33,6 +33,7 @@ final class CaptureModel: ObservableObject {
     @Published var previewVisible = true
     @Published var idlePreviewLive = false
     @Published var idlePreviewError: String?
+    @Published private(set) var idlePreviewCleaning = false
     @Published private(set) var previewWindowVisible = true
     @Published var settingsVisible = false
     @Published var selection = DeviceSelection() {
@@ -110,6 +111,10 @@ final class CaptureModel: ObservableObject {
     private var idleEngine: CaptureEngine?
     private var previewTransition: Task<Void, Never>?
     private var previewGeneration = 0
+    private var lastIdlePreviewRequest: String?
+    private var failedIdlePreviewConfiguration: String?
+    private var idlePreviewStartForCheck: ((CaptureEngine, RecordingMode, DeviceSelection) async throws -> Void)?
+    private var idlePreviewStopForCheck: ((CaptureEngine) async throws -> Void)?
     private var settingsPreviewTask: Task<Void, Never>?
 
     private var settingsStopTask: Task<Void, Never>?
@@ -207,79 +212,191 @@ final class CaptureModel: ObservableObject {
         updateIdlePreview(enabled: visible)
     }
 
+    private var idlePreviewConfiguration: String {
+        let auth = CapturePermission.required(for: mode).map { "\($0.rawValue)=\(String(describing: permissions.statuses[$0]))" }.joined(separator: ",")
+        return "\(mode.rawValue)|\(selection.cameraID)|\(selection.microphoneID)|\(selection.displayID)|\(auth)"
+    }
+
+    private func stopIdlePreview(_ preview: CaptureEngine) async -> Bool {
+        idlePreviewCleaning = true
+        defer { idlePreviewCleaning = false }
+        do {
+            if let stop = idlePreviewStopForCheck { try await stop(preview) }
+            else { try await preview.stop() }
+            return true
+        } catch {
+            // Real cleanup failure blocks every replacement session. Normal
+            // preview errors must never borrow or restore the recording busy flag.
+            requiresRestart = true
+            busy = true
+            idlePreviewError = error.localizedDescription
+            if !canStop {
+                phase = "设备需要重启"
+                detail = "预览设备未及时释放，请退出并重新打开"
+            }
+            return false
+        }
+    }
+
+    private func failIdlePreview(_ message: String, configuration: String, token: Int) {
+        guard token == previewGeneration, configuration == idlePreviewConfiguration,
+              !busy, !canStop else { return }
+        failedIdlePreviewConfiguration = configuration
+        idlePreviewError = message
+        idlePreviewLive = false
+        clearPreviews()
+        phase = "预览不可用"
+        detail = message
+    }
+
+    private func recoverIdlePreview(token: Int) {
+        guard token == previewGeneration, !busy, !canStop,
+              phase == "预览不可用" || phase == "预览需要检查" else { return }
+        phase = "准备就绪"
+        detail = ""
+    }
+
     @discardableResult
     func updateIdlePreview(enabled: Bool) -> Task<Void, Never> {
+        if !busy, permissions.requesting == nil { permissions.refresh(for: mode) }
+        let configuration = idlePreviewConfiguration
+        let request = "\(enabled)|\(idlePreviewID)|\(configuration)"
+        if request == lastIdlePreviewRequest, let existing = previewTransition { return existing }
+        lastIdlePreviewRequest = request
         previewGeneration += 1
         let token = previewGeneration
         let previous = previewTransition
+        let selectedMode = mode
+        let selectedDevices = selection
         idlePreviewLive = false
-        idleEngine?.setPreviewEnabled(false)
+        // Claim the old session synchronously. Even a superseded stop request
+        // must await its own cleanup before recording/settings may acquire devices;
+        // it must never later look up and stop a newer session instead.
+        let retiring = idleEngine
+        idleEngine = nil
+        retiring?.setPreviewEnabled(false)
         if !canStop { clearPreviews() }
         let transition = Task { [weak self] in
             await previous?.value
             guard let self else { return }
-            if let old = self.idleEngine {
-                self.idleEngine = nil
-                do { try await old.stop() }
-                catch {
-                    self.idlePreviewError = error.localizedDescription
-                    self.requiresRestart = true
-                    self.busy = true
-                    self.phase = "素材需要检查"
-                    self.detail = "预览设备未能及时释放，请退出并重新打开"
-                    return
-                }
-            }
-            guard token == self.previewGeneration, enabled, self.previewVisible, self.previewWindowVisible,
+            if let retiring { guard await self.stopIdlePreview(retiring) else { return } }
+            guard token == self.previewGeneration, configuration == self.idlePreviewConfiguration,
+                  enabled, self.previewVisible, self.previewWindowVisible,
                   !self.busy, !self.requiresRestart, !self.settingsVisible, !self.permissions.visible,
                   self.permissions.requesting == nil else { return }
-            self.permissions.refresh(for: self.mode)
-            guard self.permissions.ready(for: self.mode) else { return }
-            self.idlePreviewError = nil
+            guard self.permissions.ready(for: self.mode), self.failedIdlePreviewConfiguration != configuration else { return }
             guard await self.stopSettingsPreview(), !self.requiresRestart else { return }
-            guard token == self.previewGeneration else { return }
+            guard token == self.previewGeneration, configuration == self.idlePreviewConfiguration else { return }
+            self.idlePreviewError = nil
             let preview = CaptureEngine()
             self.idleEngine = preview
-            preview.onPreview = { [weak self] name, sample, capturedAt in
-                guard let self, token == self.previewGeneration, self.previewVisible, !self.busy else { return }
+            preview.onPreview = { [weak self, weak preview] name, sample, capturedAt in
+                guard let self, let preview, self.idleEngine === preview,
+                      token == self.previewGeneration, self.previewVisible, !self.busy else { return }
                 self.idlePreviewLive = true
+                self.recoverIdlePreview(token: token)
                 let feed = name == "camera" ? self.cameraPreview : self.desktopPreview
                 feed.frame = (sample, capturedAt)
             }
-            preview.onFailure = { [weak self] message in
-                guard let self, token == self.previewGeneration else { return }
-                self.idlePreviewError = message
+            preview.onFailure = { [weak self, weak preview] message in
+                guard let self, let preview, self.idleEngine === preview, token == self.previewGeneration else { return }
+                self.failIdlePreview(message, configuration: configuration, token: token)
                 self.updateIdlePreview(enabled: false)
             }
             do {
-                try await preview.startPreview(mode: self.mode, selection: self.selection)
+                if let start = self.idlePreviewStartForCheck { try await start(preview, selectedMode, selectedDevices) }
+                else { try await preview.startPreview(mode: selectedMode, selection: selectedDevices) }
                 if token != self.previewGeneration { preview.setPreviewEnabled(false) }
+                else { self.recoverIdlePreview(token: token) }
             } catch {
-                let wasBusy = self.busy
-                self.busy = true
-                self.requiresRestart = true
-                self.idlePreviewError = error.localizedDescription
-                self.phase = "预览需要检查"
-                self.detail = "正在清理设备；无响应时可退出并重新打开"
-                do {
-                    try await preview.stop()
-                    self.requiresRestart = false
-                    self.busy = wasBusy
-                } catch {
-                    self.idlePreviewError = error.localizedDescription
-                    self.phase = "设备需要重启"
-                    self.detail = "设备未及时释放，请退出并重新打开"
-                }
+                self.failIdlePreview(error.localizedDescription, configuration: configuration, token: token)
+                _ = await self.stopIdlePreview(preview)
                 if self.idleEngine === preview { self.idleEngine = nil }
-                if token == self.previewGeneration {
-                    self.idlePreviewLive = false
-                    self.idlePreviewError = error.localizedDescription
-                    self.clearPreviews()
-                }
             }
         }
         previewTransition = transition
         return transition
+    }
+
+    static func checkIdlePreviewFailureRecovery() async throws {
+        let suite = "zsir.preview-failure.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let setup = PermissionSetup(defaults: defaults, readStatus: { _ in .allowed })
+        let model = CaptureModel(permissions: setup)
+        model.mode = .desktop
+        model.selection.displayID = UInt32.max
+        var starts = 0
+        let clean = RecordingCompletion()
+        model.idlePreviewStartForCheck = { _, _, selection in
+            starts += 1
+            if selection.displayID == UInt32.max { throw RecordingError("所选显示器已断开，请重新选择") }
+        }
+        model.idlePreviewStopForCheck = { _ in
+            await withCheckedContinuation { c in clean.observe { _ in c.resume() } }
+        }
+        let first = model.updateIdlePreview(enabled: true)
+        for _ in 0..<1000 { if model.idlePreviewCleaning { break }; await Task.yield() }
+        precondition(model.idlePreviewCleaning && !model.busy && !model.requiresRestart)
+        precondition(model.detail.contains("显示器已断开") && model.phase == "预览不可用")
+        precondition(!model.canOpenSettings)
+        model.start()
+        precondition(model.engine == nil)
+        for _ in 0..<20 { model.updateIdlePreview(enabled: true) }
+        clean.complete(.success(()))
+        await first.value
+        precondition(starts == 1 && !model.busy && !model.idlePreviewCleaning)
+        // SwiftUI's busy-key change and app-activation callbacks must not retry
+        // the same failed display, even after its cleanup has completed.
+        model.busy = true; model.canStop = true; model.phase = "正在录制"
+        await model.updateIdlePreview(enabled: true).value
+        precondition(model.busy && model.canStop && model.phase == "正在录制" && starts == 1)
+        model.canStop = false; model.busy = false; model.phase = "预览不可用"
+        await model.updateIdlePreview(enabled: true).value
+        for _ in 0..<20 { await model.updateIdlePreview(enabled: true).value }
+        precondition(starts == 1 && model.selection.displayID == UInt32.max)
+        // Explicitly selecting another source is a retry and restores normal UI.
+        model.selection.displayID = 42
+        await model.updateIdlePreview(enabled: true).value
+        precondition(starts == 2 && model.idlePreviewError == nil && model.phase == "准备就绪" && model.detail.isEmpty)
+        await model.updateIdlePreview(enabled: false).value
+        // A failed old startup, released after a new request/recording state,
+        // must finish its cleanup without resetting the new busy/phase values.
+        let releaseOld = RecordingCompletion()
+        var oldStarted = false
+        model.selection.displayID = 43
+        model.idlePreviewStartForCheck = { _, _, _ in
+            oldStarted = true
+            await withCheckedContinuation { c in releaseOld.observe { _ in c.resume() } }
+            throw RecordingError("过期预览失败")
+        }
+        let old = model.updateIdlePreview(enabled: true)
+        for _ in 0..<1000 { if oldStarted { break }; await Task.yield() }
+        precondition(oldStarted)
+        model.busy = true; model.canStop = true; model.phase = "正在录制"; model.detail = "录制保护"
+        let stop = model.updateIdlePreview(enabled: false)
+        releaseOld.complete(.success(()))
+        await old.value; await stop.value
+        precondition(model.busy && model.canStop && model.phase == "正在录制" && model.detail == "录制保护")
+        precondition(!model.requiresRestart && model.idlePreviewError == nil)
+        model.busy = false; model.canStop = false; model.selection.displayID = 44
+        model.idlePreviewStartForCheck = { _, _, _ in starts += 1 }
+        await model.updateIdlePreview(enabled: true).value
+        let retirement = RecordingCompletion()
+        model.idlePreviewStopForCheck = { _ in
+            await withCheckedContinuation { c in retirement.observe { _ in c.resume() } }
+        }
+        model.busy = true
+        let recordingBarrier = model.updateIdlePreview(enabled: false)
+        let redundantTask = model.updateIdlePreview(enabled: true) // .task responds to busy.
+        let barrierDone = RecordingCompletion()
+        Task { await recordingBarrier.value; barrierDone.complete(.success(())) }
+        for _ in 0..<1000 { if model.idlePreviewCleaning { break }; await Task.yield() }
+        precondition(model.idlePreviewCleaning && !barrierDone.isCompleted)
+        retirement.complete(.success(()))
+        await recordingBarrier.value; await redundantTask.value
+        precondition(model.busy && model.idleEngine == nil)
+        print("PASS: failed display stays latched across activation/busy changes; explicit reselection retries; cleanup blocks new capture/settings; stale failure cannot overwrite recording state")
     }
 
     private func clearPreviews() {
@@ -289,6 +406,10 @@ final class CaptureModel: ObservableObject {
 
     func togglePreview() {
         previewVisible.toggle()
+        if previewVisible {
+            failedIdlePreviewConfiguration = nil // Explicit user retry, not app activation.
+            lastIdlePreviewRequest = nil
+        }
         engine?.setPreviewEnabled(previewVisible && previewWindowVisible)
         if !previewVisible { clearPreviews() }
     }
@@ -355,7 +476,7 @@ final class CaptureModel: ObservableObject {
     }
 
     var canOpenSettings: Bool {
-        !busy && !canStop && !requiresRestart && settingsStopTask == nil &&
+        !busy && !canStop && !requiresRestart && !idlePreviewCleaning && settingsStopTask == nil &&
             permissions.requesting == nil && !permissions.visible
     }
 
@@ -367,7 +488,7 @@ final class CaptureModel: ObservableObject {
     }
 
     func start() {
-        guard !busy, !requiresRestart, !settingsVisible, !permissions.visible, permissions.requesting == nil else { return }
+        guard !busy, !requiresRestart, !idlePreviewCleaning, !settingsVisible, !permissions.visible, permissions.requesting == nil else { return }
         permissions.refresh(for: mode)
         guard permissions.ready(for: mode) else {
             permissions.present(for: mode, busy: busy)
@@ -473,6 +594,39 @@ final class CaptureModel: ObservableObject {
     }
 }
 
+/// Keep native focus/sheet support while enforcing the content-owned chrome
+/// after AppKit recreates or re-enables titlebar controls during its lifecycle.
+@MainActor
+final class CaptureWindow: NSWindow {
+    func hideNativeButtons() {
+        for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            if let button = standardWindowButton(kind) {
+                if button.isEnabled { button.isEnabled = false }
+                if !button.isHidden { button.isHidden = true }
+            }
+        }
+    }
+    override func update() { super.update(); hideNativeButtons() }
+    override func becomeKey() { super.becomeKey(); hideNativeButtons() }
+    override func becomeMain() { super.becomeMain(); hideNativeButtons() }
+    override func endSheet(_ sheetWindow: NSWindow) {
+        super.endSheet(sheetWindow)
+        hideNativeButtons()
+    }
+    override func endSheet(_ sheetWindow: NSWindow, returnCode: NSApplication.ModalResponse) {
+        super.endSheet(sheetWindow, returnCode: returnCode)
+        hideNativeButtons()
+    }
+}
+
+@MainActor
+private final class CaptureHostingView: NSHostingView<CaptureView> {
+    override func layout() {
+        super.layout()
+        (window as? CaptureWindow)?.hideNativeButtons()
+    }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = CaptureModel()
@@ -492,7 +646,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appMenu.addItem(withTitle: "退出庄Sir采访录制助手", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         NSApp.mainMenu = menu
-        let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 336, height: 300),
+        let panel = CaptureWindow(contentRect: NSRect(x: 0, y: 0, width: 336, height: 300),
                              styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
         panel.title = RecordingCapabilities.applicationName
         panel.titleVisibility = .hidden
@@ -505,17 +659,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.isReleasedWhenClosed = false
-        let hosting = NSHostingView(rootView: CaptureView(model: model))
+        let hosting = CaptureHostingView(rootView: CaptureView(model: model))
         if #available(macOS 13, *) { hosting.sizingOptions = [] }
         panel.contentView = hosting
-        // Keep the titled window's focus/sheet behavior, but remove native chrome
-        // from both drawing and hit testing; the content supplies drag and exit.
-        for kind in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            if let button = panel.standardWindowButton(kind) {
-                button.isEnabled = false
-                button.isHidden = true
-            }
-        }
+        panel.hideNativeButtons()
         if let frame = NSScreen.main?.visibleFrame {
             panel.setFrameTopLeftPoint(NSPoint(x: frame.maxX - panel.frame.width - 16, y: frame.maxY - 16))
         }
@@ -574,6 +721,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 enum CaptureApp {
     @MainActor static func main() {
         let app = NSApplication.shared
+        if CommandLine.arguments.contains("--check-preview-recovery") {
+            Task { do { try await CaptureModel.checkIdlePreviewFailureRecovery(); exit(0) } catch { print("FAIL preview recovery: \(error)"); exit(1) } }
+            app.run(); return
+        }
         if CommandLine.arguments.contains("--check-lifecycle") {
             Task { do { try await CaptureEngine.checkPreparationStopRaces(); try await CaptureModel.checkSettingsPreviewDeadline(); try await CaptureEngine.checkBoundedPreviewStartup(); try await CaptureEngine.checkBoundedStop(); exit(0) } catch { print("FAIL lifecycle: \(error)"); exit(1) } }
             app.run(); return
