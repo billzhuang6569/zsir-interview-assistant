@@ -62,7 +62,7 @@ source = a.directory / 'recording-tools-source.tar.gz'
 assert source.is_file(), 'Corresponding source missing'
 sums.append(f'{hashlib.sha256(source.read_bytes()).hexdigest()}  {source.name}')
 release = dict(version=version, publishedAt=datetime.datetime.now(datetime.timezone.utc).isoformat(),
-               summary='固定30fps时间轴、独立桌面尺寸与录前预览；录制资源管理和异常素材恢复改进。',
+               summary='修复Mac预览失败反复闪烁，以及系统窗口按钮重新出现。',
                releaseURL=f'https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v{version}', assets=assets)
 history = []
 if a.previous:

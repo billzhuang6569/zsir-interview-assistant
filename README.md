@@ -3,7 +3,7 @@
   <h1>庄Sir采访录制助手</h1>
   <p><strong>把采访素材，高清留在嘉宾电脑里。</strong></p>
   <p>选择画面，点击录制。一个安静待在屏幕边缘的本地录制小工具。</p>
-  <p><a href="https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.4.0">下载 v0.4.0</a> · <a href="#三步开始录制">开始使用</a> · <a href="#能力与验证范围">支持范围</a> · <a href="docs/product.md">产品设计</a></p>
+  <p><a href="https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.4.1">下载 v0.4.1</a> · <a href="#三步开始录制">开始使用</a> · <a href="#能力与验证范围">支持范围</a> · <a href="docs/product.md">产品设计</a></p>
 </div>
 
 <p align="center">
@@ -30,18 +30,18 @@ macOS 可选择只录摄像头、只录桌面或同时录两路；Windows 当前
 
 ## 下载
 
-v0.4.0 改进固定 30 fps 时间轴、录制启动与停止、预览控制和异常恢复，设置按钮统一为齿轮。六包同版本发布；[实测范围与已知限制](docs/releases/0.4.0.md)随版本保留。
+v0.4.1 修复 Mac 预览失败后反复闪烁，以及系统窗口按钮重新出现的问题。六包同版本发布；[实测范围与已知限制](docs/releases/0.4.1.md)随版本保留。
 
 | 你的电脑 | 下载 | 要求与说明 |
 | --- | --- | --- |
-| Mac · M芯片 | [完整版 ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.0/ZSirCapture-0.4.0-macos-arm64.zip) | macOS13+ |
-| Mac · Intel | [完整版 Intel](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.0/ZSirCapture-0.4.0-macos-x86_64.zip) | macOS13+ |
-| 旧版Mac · M芯片 | [macOS12兼容版 ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.0/ZSirCapture-0.4.0-macos12-arm64.zip) | macOS12.3+；桌面不含系统声音 |
-| 旧版Mac · Intel | [macOS12兼容版 Intel](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.0/ZSirCapture-0.4.0-macos12-x86_64.zip) | macOS12.3+；桌面不含系统声音 |
-| Windows · Intel / AMD | [Windows x64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.0/ZSirCapture-0.4.0-windows-x64.zip) | Windows10 2004+；解压即用 |
-| Windows · ARM | [Windows ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.0/ZSirCapture-0.4.0-windows-arm64.zip) | Windows11 ARM；编码工具使用x64仿真 |
+| Mac · M芯片 | [完整版 ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.1/ZSirCapture-0.4.1-macos-arm64.zip) | macOS13+ |
+| Mac · Intel | [完整版 Intel](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.1/ZSirCapture-0.4.1-macos-x86_64.zip) | macOS13+ |
+| 旧版Mac · M芯片 | [macOS12兼容版 ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.1/ZSirCapture-0.4.1-macos12-arm64.zip) | macOS12.3+；桌面不含系统声音 |
+| 旧版Mac · Intel | [macOS12兼容版 Intel](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.1/ZSirCapture-0.4.1-macos12-x86_64.zip) | macOS12.3+；桌面不含系统声音 |
+| Windows · Intel / AMD | [Windows x64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.1/ZSirCapture-0.4.1-windows-x64.zip) | Windows10 2004+；解压即用 |
+| Windows · ARM | [Windows ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.1/ZSirCapture-0.4.1-windows-arm64.zip) | Windows11 ARM；编码工具使用x64仿真 |
 
-[发布说明](https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.4.0) · [SHA256校验](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.0/SHA256SUMS.txt) · [编码工具完整源码](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.0/recording-tools-source.tar.gz)
+[发布说明](https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.4.1) · [SHA256校验](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.1/SHA256SUMS.txt) · [编码工具完整源码](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.4.1/recording-tools-source.tar.gz)
 
 Mac完整版在高级设置中提供自动/手动检查和自定义HTTPS清单来源；录制期间不打扰，仅提示下载，不自动安装。macOS12兼容版与Windows本轮不提供版本检测。v0.2.0用户需手动升级一次。
 
