@@ -13,7 +13,7 @@ public partial class PreviewTile : UserControl
     public static readonly DependencyProperty EmptyGlyphProperty = DependencyProperty.Register(nameof(EmptyGlyph), typeof(string), typeof(PreviewTile), new PropertyMetadata("\uE714"));
     public static readonly DependencyProperty EmptyTextProperty = DependencyProperty.Register(nameof(EmptyText), typeof(string), typeof(PreviewTile), new PropertyMetadata("等待预览"));
     public static readonly DependencyProperty ShowRetryProperty = DependencyProperty.Register(nameof(ShowRetry), typeof(bool), typeof(PreviewTile), new PropertyMetadata(false));
-    public static readonly DependencyProperty ShowMeterProperty = DependencyProperty.Register(nameof(ShowMeter), typeof(bool), typeof(PreviewTile), new PropertyMetadata(false));
+    public static readonly DependencyProperty ShowMeterProperty = DependencyProperty.Register(nameof(ShowMeter), typeof(bool), typeof(PreviewTile), new PropertyMetadata(false, Changed));
     public static readonly DependencyProperty RecordingProperty = DependencyProperty.Register(nameof(Recording), typeof(bool), typeof(PreviewTile), new PropertyMetadata(false));
     public static readonly DependencyProperty RatioProperty = DependencyProperty.Register(nameof(Ratio), typeof(double), typeof(PreviewTile), new PropertyMetadata(1.6));
     public static readonly DependencyProperty LevelProperty = DependencyProperty.Register(nameof(Level), typeof(double), typeof(PreviewTile), new PropertyMetadata(0.0, Changed));
@@ -36,7 +36,10 @@ public partial class PreviewTile : UserControl
     void UpdateEmpty()
     {
         if (Empty == null) return;
-        Empty.Visibility = Image == null ? Visibility.Visible : Visibility.Collapsed;
+        bool hasFrame = Image != null;
+        PictureImage.Visibility = hasFrame ? Visibility.Visible : Visibility.Collapsed;
+        Empty.Visibility = hasFrame ? Visibility.Collapsed : Visibility.Visible;
+        MicMeter.Visibility = ShowMeter && hasFrame ? Visibility.Visible : Visibility.Collapsed;
         SetValue(MeterHeightPropertyKey, Math.Clamp(Level, 0, 100) * .26);
     }
 }

@@ -7,7 +7,7 @@
     </StackPanel>
     <local:AspectBorder x:Name="Picture" Ratio="{Binding Ratio, ElementName=Tile}" CornerRadius="8" Background="{StaticResource Surface}" BorderBrush="{StaticResource Stroke}" BorderThickness="1">
       <Grid Tag="overlay">
-        <Image Source="{Binding Image, ElementName=Tile}" Stretch="UniformToFill" ClipToBounds="True" Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Grid}}" Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Grid}}"/>
+        <Image x:Name="PictureImage" Visibility="Collapsed" Source="{Binding Image, ElementName=Tile}" Stretch="UniformToFill" ClipToBounds="True" Width="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=Grid}}" Height="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType=Grid}}"/>
         <StackPanel x:Name="Empty" VerticalAlignment="Center" HorizontalAlignment="Center" Margin="8">
           <TextBlock Text="{Binding EmptyGlyph, ElementName=Tile}" Style="{StaticResource Icon}" FontSize="26" HorizontalAlignment="Center" Foreground="{StaticResource Faint}" Margin="0,0,0,6"/>
           <TextBlock Text="{Binding EmptyText, ElementName=Tile}" TextWrapping="Wrap" TextAlignment="Center" Foreground="{StaticResource Faint}" FontSize="11.5" MaxHeight="28" LineHeight="14" ToolTip="{Binding EmptyText, ElementName=Tile}"/>
@@ -19,7 +19,7 @@
             <TextBlock Text="REC" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
           </StackPanel>
         </Border>
-        <Border Width="4" Height="26" CornerRadius="2" Background="#66000000" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="6" Visibility="{Binding ShowMeter, ElementName=Tile, Converter={StaticResource Visible}}">
+        <Border x:Name="MicMeter" Visibility="Collapsed" Width="4" Height="26" CornerRadius="2" Background="#66000000" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="6">
           <Grid>
             <Border Background="{StaticResource Mint}" VerticalAlignment="Bottom" Height="{Binding MeterHeight, ElementName=Tile}"/>
           </Grid>

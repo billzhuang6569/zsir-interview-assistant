@@ -37,7 +37,7 @@ public partial class MainWindow : Window, IRecordingHost
             new WindowInteropHelper(Edge).EnsureHandle();
             Controller.ApplyCaptureVisibility();
         };
-        Loaded += (_, _) => { if (!placed) { PlaceInitial(); placed = true; } UpdateDesktopCaption(); };
+        Loaded += (_, _) => { if (!placed) { PlaceInitial(); placed = true; } UpdateDesktopCaption(); Controller.VisibilityChanged(); };
         IsVisibleChanged += (_, _) => Controller.VisibilityChanged();
         StateChanged += (_, _) => Controller.VisibilityChanged();
         IsEnabledChanged += (_, _) => Controller.VisibilityChanged();

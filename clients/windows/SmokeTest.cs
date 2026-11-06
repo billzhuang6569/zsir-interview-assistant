@@ -30,6 +30,7 @@ internal static class SmokeTest
         var errors = new List<string>();
         var layoutFailures = new Dictionary<string, List<string>>();
         report["layoutFailures"] = layoutFailures;
+        report["idlePreviewFrameSeen"] = false;
         var standaloneRecorders = new List<Recorder>();
         TestScene? scene = null;
         string originalMode = form.Options.Mode;
@@ -106,6 +107,11 @@ internal static class SmokeTest
                 CaptureWindow(window, Path.Combine(root, "client-collapsed.png"), layoutFailures);
                 toggle(); FlushLayout(window);
                 RecordLayout(layoutFailures, "client-ready", () => { if (Math.Abs(window.ActualHeight - expandedHeight) > .5) throw new Exception("Preview expand changed original window height"); });
+                var idleWait = Stopwatch.StartNew();
+                while (form.ViewModel.DesktopImage == null && idleWait.Elapsed < TimeSpan.FromSeconds(5)) await Task.Delay(50);
+                bool idleFrameSeen = form.ViewModel.DesktopImage != null;
+                report["idlePreviewFrameSeen"] = idleFrameSeen;
+                RecordLayout(layoutFailures, "client-ready/idle-preview", () => { if (!idleFrameSeen) throw new Exception("No idle desktop frame within 5 seconds"); });
                 CaptureWindow(window, Path.Combine(root, "client-ready.png"), layoutFailures);
                 report["previewLayoutPassed"] = !layoutFailures.Keys.Any(key => key.StartsWith("client-"));
                 scene = new TestScene(); scene.Show(); window.Activate();
@@ -514,8 +520,20 @@ internal static class SmokeTest
             {
                 var controller = fixture.Controller;
                 controller.SetMode(mode, persist: false); fixture.Show(); fixture.ScaleForLayoutTest(scale);
-                Check("ready-empty", () => CheckLayout(fixture));
+                Check("ready-empty", () =>
+                {
+                    CheckLayout(fixture);
+                    foreach (var tile in new[] { fixture.CameraTile, fixture.DesktopTile }.Where(tile => tile.IsVisible)) CheckPreviewTile(tile, hasFrame: false);
+                });
                 var frame = BitmapSource.Create(32, 18, 96, 96, PixelFormats.Bgr32, null, new byte[32 * 18 * 4], 32 * 4); frame.Freeze();
+                controller.ViewModel.CameraImage = controller.ViewModel.DesktopImage = frame;
+                controller.SetMode(mode, persist: false);
+                Check("source-reset", () =>
+                {
+                    if (controller.ViewModel.CameraImage != null || controller.ViewModel.DesktopImage != null) throw new Exception("Mode changes must clear stale preview images");
+                    FlushLayout(fixture);
+                    foreach (var tile in new[] { fixture.CameraTile, fixture.DesktopTile }.Where(tile => tile.IsVisible)) CheckPreviewTile(tile, hasFrame: false);
+                });
                 controller.ViewModel.CameraImage = controller.ViewModel.DesktopImage = frame;
                 Check("ready", () =>
                 {
@@ -524,6 +542,7 @@ internal static class SmokeTest
                     if (tiles.Length != (mode == "both" ? 2 : 1)) throw new Exception("Preview tile count does not match mode");
                     foreach (var tile in tiles)
                     {
+                        CheckPreviewTile(tile, hasFrame: true);
                         var picture = (AspectBorder)tile.FindName("Picture");
                         if (Math.Abs(picture.ActualWidth / picture.ActualHeight - (mode == "both" ? 1.6 : 16.0 / 9)) > .03)
                             throw new Exception("Preview tile aspect ratio does not match mode");
@@ -540,6 +559,12 @@ internal static class SmokeTest
                     }
                     else if (Math.Abs(tiles[0].ActualWidth - fixture.PreviewRow.ActualWidth) > 1) throw new Exception("Single preview must fill its container");
                 });
+                if (mode is "camera" or "both")
+                {
+                    controller.ViewModel.CameraAvailable = false;
+                    Check("camera-meter-unavailable", () => { FlushLayout(fixture); CheckPreviewTile(fixture.CameraTile, hasFrame: true); });
+                    controller.ViewModel.CameraAvailable = true;
+                }
                 if (scale == 1 && mode == "desktop") Capture(fixture, "client-ready.png");
                 controller.TogglePreview(); Check("collapsed", () => CheckLayout(fixture));
                 if (scale == 1 && mode == "desktop") Capture(fixture, "client-collapsed.png");
@@ -552,6 +577,8 @@ internal static class SmokeTest
                     Check("no-camera", () =>
                     {
                         CheckLayout(fixture);
+                        CheckPreviewTile(fixture.CameraTile, hasFrame: false);
+                        CheckPreviewTile(fixture.DesktopTile, hasFrame: false);
                         if (controller.ViewModel.CanStart || controller.ViewModel.PreviewState != "摄像头不可用") throw new Exception("No camera UI must explain the failure and disable recording");
                     });
                     if (scale == 1) Capture(fixture, "client-nocamera.png");
@@ -642,6 +669,24 @@ internal static class SmokeTest
             if (current is FrameworkElement item) chain.Add(Describe(item));
         return string.Join(" <- ", chain);
     }
+    static bool HasIntentionalClipAncestor(DependencyObject element, FrameworkElement root)
+    {
+        for (var parent = VisualTreeHelper.GetParent(element); parent != null && parent != root; parent = VisualTreeHelper.GetParent(parent))
+        {
+            // Scroll canvases are checked in full; a viewport must not exempt their controls.
+            if (parent is ScrollContentPresenter) return false;
+            if (parent is UIElement visual && (visual.ClipToBounds || visual.Clip != null)) return true;
+        }
+        return false;
+    }
+    static void CheckPreviewTile(PreviewTile tile, bool hasFrame)
+    {
+        var picture = (Image)tile.FindName("PictureImage");
+        var empty = (FrameworkElement)tile.FindName("Empty");
+        var meter = (FrameworkElement)tile.FindName("MicMeter");
+        if (picture.IsVisible != hasFrame || empty.IsVisible == hasFrame || meter.IsVisible != (hasFrame && tile.ShowMeter))
+            throw new Exception($"Preview placeholder/meter state mismatch: {tile.Name}, frame={hasFrame}");
+    }
     static void CheckLayout(FrameworkElement root)
     {
         FlushLayout(root);
@@ -651,7 +696,7 @@ internal static class SmokeTest
             var children = Enumerable.Range(0, VisualTreeHelper.GetChildrenCount(parent)).Select(i => VisualTreeHelper.GetChild(parent, i)).ToArray();
             foreach (var child in children)
             {
-                if (child is FrameworkElement element && !element.IsVisible) continue;
+                if (child is FrameworkElement element && (!element.IsVisible || HasIntentionalClipAncestor(element, root))) continue;
                 if (parent is FrameworkElement container && child is FrameworkElement item && item.ActualWidth > 0 && item.ActualHeight > 0)
                 {
                     var bounds = PixelBounds(item, root);
@@ -662,8 +707,8 @@ internal static class SmokeTest
                 }
                 Visit(child);
             }
-            if (parent is not Panel panel || Equals(panel.Tag, "overlay")) return;
-            var siblings = children.OfType<FrameworkElement>().Where(c => c.IsVisible && !Equals(c.Tag, "overlay") && c.ActualWidth > 0 && c.ActualHeight > 0).ToArray();
+            if (parent is not Panel panel || Equals(panel.Tag, "overlay") || HasIntentionalClipAncestor(panel, root)) return;
+            var siblings = children.OfType<FrameworkElement>().Where(c => c.IsVisible && !HasIntentionalClipAncestor(c, root) && !Equals(c.Tag, "overlay") && c.ActualWidth > 0 && c.ActualHeight > 0).ToArray();
             for (int i = 0; i < siblings.Length; i++)
             for (int j = i + 1; j < siblings.Length; j++)
             {
@@ -710,6 +755,17 @@ internal static class SmokeTest
         if (!FitsLayout(new Rect(-.5, -.5, 17, 19), area) || FitsLayout(new Rect(0, 0, 17, 18), area) ||
             FitsLayout(new Rect(-.51, 0, 16, 18), area) || FitsLayout(new Rect(0, -.51, 16, 18), area) || FitsLayout(new Rect(0, 0, 16, 18.51), area))
             throw new Exception("Layout tolerance must allow half a pixel and reject real clipping");
+        var root = new Grid(); var crop = new Border(); var child = new Grid();
+        root.Children.Add(crop); crop.Child = child;
+        if (HasIntentionalClipAncestor(child, root)) throw new Exception("Unclipped content must keep strict layout checks");
+        crop.ClipToBounds = true;
+        if (!HasIntentionalClipAncestor(child, root) || HasIntentionalClipAncestor(crop, root)) throw new Exception("Only crop descendants should be exempt");
+        crop.ClipToBounds = false; crop.Clip = new RectangleGeometry(area);
+        if (!HasIntentionalClipAncestor(child, root)) throw new Exception("Explicit geometry crops must be exempt");
+        var viewport = new ScrollContentPresenter { ClipToBounds = true }; var page = new Grid(); var control = new Border();
+        root.Children.Add(viewport); viewport.Content = page; page.Children.Add(control);
+        root.Measure(new Size(100, 100)); root.Arrange(new Rect(0, 0, 100, 100));
+        if (HasIntentionalClipAncestor(control, root)) throw new Exception("A scroll viewport must not hide layout failures in its page");
         var failures = new Dictionary<string, List<string>>(); int continued = 0;
         RecordLayout(failures, "main", () => throw new Exception("injected layout failure"));
         RecordLayout(failures, "settings", () => continued++);

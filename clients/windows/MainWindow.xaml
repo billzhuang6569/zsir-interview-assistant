@@ -151,7 +151,7 @@
           <ColumnDefinition Width="{Binding TileGap}"/>
           <ColumnDefinition Width="{Binding DesktopColumn}"/>
         </Grid.ColumnDefinitions>
-        <local:PreviewTile x:Name="CameraTile" Caption="摄像头 · 话筒" Image="{Binding CameraImage}" EmptyText="{Binding CameraMessage}" ShowRetry="{Binding CameraRetry}" ShowMeter="True" Level="{Binding MicLevel}" Recording="{Binding IsRecording}" Ratio="{Binding PreviewRatio}" Visibility="{Binding IncludesCamera, Converter={StaticResource Visible}}" RetryRequested="RetryCamera"/>
+        <local:PreviewTile x:Name="CameraTile" Caption="摄像头 · 话筒" Image="{Binding CameraImage}" EmptyText="{Binding CameraMessage}" ShowRetry="{Binding CameraRetry}" ShowMeter="{Binding CameraAvailable}" Level="{Binding MicLevel}" Recording="{Binding IsRecording}" Ratio="{Binding PreviewRatio}" Visibility="{Binding IncludesCamera, Converter={StaticResource Visible}}" RetryRequested="RetryCamera"/>
         <local:PreviewTile x:Name="DesktopTile" Grid.Column="2" Glyph="&#xE7F4;" EmptyGlyph="&#xE7F4;" Image="{Binding DesktopImage}" Ratio="{Binding PreviewRatio}" Recording="{Binding IsRecording}" Visibility="{Binding IncludesDesktop, Converter={StaticResource Visible}}"/>
       </Grid>
       <Grid>

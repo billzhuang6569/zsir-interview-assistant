@@ -34,8 +34,8 @@ internal sealed class RecordingController : IDisposable
     Recorder? recorder;
     IdlePreview? idleCamera, idlePreview;
     AudioDevice? selectedAudio;
-    string idleCameraId = "";
-    int pendingCameraPreview, pendingPreview, idlePreviewGeneration;
+    string idleCameraId = "", idleDesktopId = "";
+    int pendingCameraPreview, pendingPreview, idlePreviewGeneration, idleCameraGeneration;
     DateTime nextIdlePreviewAttempt, nextDesktopPreviewAttempt;
     bool disposed, excluded, settingsOpen;
     public MainViewModel ViewModel { get; } = new();
@@ -96,23 +96,31 @@ internal sealed class RecordingController : IDisposable
         catch (Exception ex) { options.Mode = previous; ShowError(ex); return; }
         ViewModel.Mode = mode;
         if (ViewModel.Phase is "未检测到摄像头" or "摄像头不可用") ViewModel.Phase = "准备就绪";
-        ViewModel.CameraImage = null; ViewModel.CameraMessage = "等待预览";
+        ViewModel.CameraImage = null; ViewModel.DesktopImage = null; ViewModel.MicLevel = 0; ViewModel.CameraMessage = "等待预览";
         ViewModel.CameraAvailable = true; ViewModel.Detail = ModeDetail();
+        nextIdlePreviewAttempt = nextDesktopPreviewAttempt = DateTime.MinValue;
         SyncControls(); UpdatePreviewState(); _ = UpdateIdlePreviewAsync();
     }
     public void TogglePreview()
     {
         ViewModel.PreviewVisible = !ViewModel.PreviewVisible;
+        if (ViewModel.PreviewVisible) nextIdlePreviewAttempt = nextDesktopPreviewAttempt = DateTime.MinValue;
         if (recorder != null) recorder.PreviewEnabled = PreviewWanted;
         _ = UpdateIdlePreviewAsync();
     }
     public void VisibilityChanged()
     {
+        if (PreviewWanted) nextIdlePreviewAttempt = nextDesktopPreviewAttempt = DateTime.MinValue;
         SyncControls();
         if (recorder != null) recorder.PreviewEnabled = PreviewWanted;
         _ = UpdateIdlePreviewAsync();
     }
-    public void SetSettingsOpen(bool value) { settingsOpen = value; _ = UpdateIdlePreviewAsync(); }
+    public void SetSettingsOpen(bool value)
+    {
+        settingsOpen = value;
+        if (!value) nextIdlePreviewAttempt = nextDesktopPreviewAttempt = DateTime.MinValue;
+        _ = UpdateIdlePreviewAsync();
+    }
     public Task ReleaseIdleForSettingsAsync() => StopIdlePreviewAsync();
     public void DetectDevices()
     {
@@ -169,7 +177,7 @@ internal sealed class RecordingController : IDisposable
     async Task StopIdlePreviewCoreAsync()
     {
         var camera = idleCamera; var current = idlePreview;
-        idleCamera = null; idlePreview = null; idlePreviewGeneration++;
+        idleCamera = null; idlePreview = null; ClearPreview(camera: true); ClearPreview(camera: false);
         try { await Task.WhenAll(camera?.StopAsync() ?? Task.CompletedTask, current?.StopAsync() ?? Task.CompletedTask); }
         finally { camera?.Dispose(); current?.Dispose(); }
     }
@@ -181,32 +189,44 @@ internal sealed class RecordingController : IDisposable
             var screen = Screen.AllScreens.FirstOrDefault(x => x.DeviceName == options.ScreenId);
             bool cameraWanted = PreviewWanted && !IsBusy && !settingsOpen && recorder?.CleanupPending != true && options.IncludesCamera;
             if (idleCamera != null && (!cameraWanted || idleCameraId != options.CameraId || idleCamera.HasExited))
-            { var old = idleCamera; idleCamera = null; try { await old.StopAsync(); } finally { old.Dispose(); } }
+            {
+                var old = idleCamera; idleCamera = null; ClearPreview(camera: true);
+                try { await old.StopAsync(); } finally { old.Dispose(); }
+            }
             bool wanted = PreviewWanted && options.IncludesDesktop && !settingsOpen && !IsBusy && recorder?.CleanupPending != true && screen != null;
-            if (idlePreview != null && (!wanted || idlePreview.Bounds != screen!.Bounds || idlePreview.HasExited)) await StopIdlePreviewCoreAsync();
+            if (idlePreview != null && (!wanted || idleDesktopId != options.ScreenId || idlePreview.Bounds != screen!.Bounds || idlePreview.HasExited)) await StopIdlePreviewCoreAsync();
+            // Start desktop independently of camera discovery, including the no-camera case.
+            if (wanted && PreviewWanted && !IsBusy && idlePreview == null && DateTime.UtcNow >= nextDesktopPreviewAttempt)
+            {
+                nextDesktopPreviewAttempt = DateTime.UtcNow.AddSeconds(5);
+                ClearPreview(camera: false);
+                int generation = idlePreviewGeneration;
+                string screenId = options.ScreenId;
+                idleDesktopId = screenId;
+                idlePreview = new IdlePreview(Tools, screen!.Bounds, bytes => QueueFrame(bytes, false,
+                    () => !IsBusy && !settingsOpen && generation == idlePreviewGeneration && screenId == options.ScreenId && options.IncludesDesktop && PreviewWanted));
+            }
             if (cameraWanted && idleCamera == null && DateTime.UtcNow >= nextIdlePreviewAttempt)
             {
                 try
                 {
                     nextIdlePreviewAttempt = DateTime.UtcNow.AddSeconds(5);
+                    ClearPreview(camera: true);
+                    int generation = idleCameraGeneration;
                     string cameraId = options.CameraId;
                     var device = await CameraDevices.ResolveAsync(Tools, cameraId);
                     if (!CameraDevices.Fake) CapturePrivacy.Check("webcam");
                     var format = CameraDevices.ChooseFormat(await CameraDevices.FormatsAsync(Tools, device));
-                    if (!PreviewWanted || IsBusy || settingsOpen || !options.IncludesCamera || options.CameraId != cameraId) return;
+                    if (!PreviewWanted || IsBusy || settingsOpen || generation != idleCameraGeneration || !options.IncludesCamera || options.CameraId != cameraId) return;
                     idleCameraId = cameraId;
                     ViewModel.CameraAvailable = true; ViewModel.CameraMessage = "等待预览"; SyncControls();
                     if (ViewModel.Phase is "未检测到摄像头" or "摄像头不可用") { ViewModel.Phase = "准备就绪"; ViewModel.Detail = ModeDetail(); }
-                    idleCamera = new IdlePreview(Tools, Rectangle.Empty, ReceiveCameraPreview, device, format);
+                    idleCamera = new IdlePreview(Tools, Rectangle.Empty, bytes => QueueFrame(bytes, true,
+                        () => !IsBusy && !settingsOpen && generation == idleCameraGeneration && cameraId == options.CameraId && options.IncludesCamera && PreviewWanted), device, format);
                 }
                 catch (Exception ex) when (ex is IOException or System.ComponentModel.Win32Exception or InvalidOperationException or TimeoutException)
                 { CameraPreviewFailed(ex); }
-
             }
-            if (!wanted || !PreviewWanted || IsBusy || idlePreview != null || DateTime.UtcNow < nextDesktopPreviewAttempt) return;
-            nextDesktopPreviewAttempt = DateTime.UtcNow.AddSeconds(5);
-            int generation = ++idlePreviewGeneration;
-            idlePreview = new IdlePreview(Tools, screen!.Bounds, bytes => QueueFrame(bytes, false, () => !IsBusy && generation == idlePreviewGeneration && PreviewWanted));
         }
         catch (Exception ex) when (ex is IOException or System.ComponentModel.Win32Exception or InvalidOperationException or TimeoutException)
         {
@@ -217,12 +237,22 @@ internal sealed class RecordingController : IDisposable
     }
     void CameraPreviewFailed(Exception ex)
     {
+        ClearPreview(camera: true);
         ViewModel.CameraAvailable = false; ViewModel.CameraMessage = ex.Message == CameraDevices.NoCamera ? "未检测到摄像头" : ex.Message;
         ViewModel.Phase = ex.Message == CameraDevices.NoCamera ? "未检测到摄像头" : "摄像头不可用";
         ViewModel.Detail = ex.Message == CameraDevices.NoCamera ? "连接摄像头后点「重新检测」，或切换到「桌面」" : ex.Message;
         SyncControls(); UpdatePreviewState();
     }
-    void ReceiveCameraPreview(byte[] bytes) => QueueFrame(bytes, true, () => PreviewWanted && options.IncludesCamera);
+    void ClearPreview(bool camera)
+    {
+        if (camera)
+        {
+            idleCameraGeneration++; ViewModel.CameraImage = null; ViewModel.MicLevel = 0;
+            if (ViewModel.CameraAvailable) ViewModel.CameraMessage = "等待预览";
+        }
+        else { idlePreviewGeneration++; ViewModel.DesktopImage = null; }
+        UpdatePreviewState();
+    }
     void QueueFrame(byte[] bytes, bool camera, Func<bool> valid)
     {
         if (disposed) return;
@@ -269,8 +299,9 @@ internal sealed class RecordingController : IDisposable
             SetThreadExecutionState(0x80000001);
             var current = new Recorder(Tools) { PreviewEnabled = ViewModel.PreviewVisible };
             recorder = current;
-            current.CameraPreview = ReceiveCameraPreview;
-            current.Preview = bytes => { if (!options.IncludesDesktop) ReceiveCameraPreview(bytes); else QueueFrame(bytes, false, () => recorder == current && PreviewWanted); };
+            void ReceiveRecordingCamera(byte[] bytes) => QueueFrame(bytes, true, () => recorder == current && IsBusy && PreviewWanted && options.IncludesCamera);
+            current.CameraPreview = ReceiveRecordingCamera;
+            current.Preview = bytes => { if (!options.IncludesDesktop) ReceiveRecordingCamera(bytes); else QueueFrame(bytes, false, () => recorder == current && IsBusy && PreviewWanted); };
             ViewModel.CameraImage = null; ViewModel.DesktopImage = null;
             await current.StartAsync(root, screen.Bounds, audioDevice?.Id ?? "", options.Quality, options.SystemAudio, options.OutputProfile, StealthInCapture, options.Mode, options.CameraId, options.MicrophoneId);
             lastFolder = current.Folder; ViewModel.IsRecording = true; ViewModel.HasTimecode = true; host.ResetIdle();
@@ -341,7 +372,7 @@ internal sealed class RecordingController : IDisposable
     }
     internal void SetNoCameraLayoutForTest()
     {
-        ViewModel.CameraAvailable = false; ViewModel.CameraImage = null; ViewModel.CameraMessage = "未检测到摄像头";
+        ViewModel.CameraAvailable = false; ViewModel.CameraImage = null; ViewModel.DesktopImage = null; ViewModel.MicLevel = 0; ViewModel.CameraMessage = "未检测到摄像头";
         ViewModel.Phase = "未检测到摄像头"; ViewModel.Detail = "连接摄像头后点「重新检测」，或切换到「桌面」"; SyncControls(); UpdatePreviewState();
     }
     public void Dispose()
