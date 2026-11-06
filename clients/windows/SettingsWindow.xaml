@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ZSirCapture" x:Class="ZSirCapture.SettingsWindow" Style="{StaticResource {x:Type Window}}" Foreground="{StaticResource Ink}" Title="录制设置" Width="560" SizeToContent="Height" ResizeMode="NoResize" ShowInTaskbar="False" WindowStartupLocation="CenterOwner" Background="{StaticResource SettingsBackground}">
-  <ScrollViewer x:Name="Viewport" Background="{StaticResource SettingsBackground}" TextElement.Foreground="{StaticResource Ink}" VerticalScrollBarVisibility="Auto">
-    <StackPanel x:Name="Root" TextElement.Foreground="{StaticResource Ink}" Margin="24,22,24,20">
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:ZSirCapture" x:Class="ZSirCapture.SettingsWindow" Style="{StaticResource {x:Type Window}}" UseLayoutRounding="True" SnapsToDevicePixels="True" Foreground="{StaticResource Ink}" Title="录制设置" Width="560" SizeToContent="Height" ResizeMode="NoResize" ShowInTaskbar="False" WindowStartupLocation="CenterOwner" Background="{StaticResource SettingsBackground}">
+  <ScrollViewer x:Name="Viewport" UseLayoutRounding="True" SnapsToDevicePixels="True" Background="{StaticResource SettingsBackground}" TextElement.Foreground="{StaticResource Ink}" VerticalScrollBarVisibility="Auto">
+    <StackPanel x:Name="Root" UseLayoutRounding="True" SnapsToDevicePixels="True" TextElement.Foreground="{StaticResource Ink}" Margin="24,22,24,20">
       <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
         <Button x:Name="Back" Style="{StaticResource Link}" Foreground="{StaticResource Ink}" Width="28" Height="24" Margin="0,0,10,0" Visibility="Collapsed" Click="BackClick" AutomationProperties.Name="返回录制设置">
           <TextBlock Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}" x:Name="BackGlyph" Text="&#xE76B;" Style="{StaticResource Icon}" FontSize="18"/>
@@ -52,15 +52,16 @@
               <TextBlock Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}" Text="&#xE7F4;" Style="{StaticResource Icon}" Margin="0,0,8,0"/>
               <TextBlock Foreground="{StaticResource Ink}" Text="桌面画面" FontSize="13" FontWeight="SemiBold"/>
             </StackPanel>
-            <ListBox Foreground="{StaticResource Ink}" x:Name="Displays" BorderThickness="0" Background="Transparent" Margin="0,0,0,7" SelectionChanged="DisplayChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled" AutomationProperties.Name="录制显示器">
+            <ListBox Foreground="{StaticResource Ink}" x:Name="Displays" UseLayoutRounding="True" SnapsToDevicePixels="True" HorizontalContentAlignment="Stretch" BorderThickness="0" Background="Transparent" Margin="0,0,0,7" SelectionChanged="DisplayChanged" ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Disabled" AutomationProperties.Name="录制显示器">
               <ListBox.Template>
                 <ControlTemplate TargetType="ListBox">
-                  <ItemsPresenter/>
+                  <ItemsPresenter HorizontalAlignment="Stretch" UseLayoutRounding="True" SnapsToDevicePixels="True"/>
                 </ControlTemplate>
               </ListBox.Template>
               <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>
-                  <UniformGrid Columns="2"/>
+                  <!-- Rounded child widths must not grow the panel beyond its presenter slot. -->
+                  <UniformGrid Columns="2" HorizontalAlignment="Stretch" Margin="0" UseLayoutRounding="True" SnapsToDevicePixels="True" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ItemsPresenter}}"/>
                 </ItemsPanelTemplate>
               </ListBox.ItemsPanel>
               <ListBox.ItemContainerStyle>
