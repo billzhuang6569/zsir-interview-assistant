@@ -14,7 +14,7 @@ internal sealed class IdlePreview : IDisposable
     public Rectangle Bounds { get; }
     public bool HasExited => process.HasExited;
 
-    public IdlePreview(string tools, Rectangle bounds, Action<byte[]> frame)
+    public IdlePreview(string tools, Rectangle bounds, Action<byte[]> frame, CameraDevice? camera = null, CameraFormat? format = null)
     {
         Bounds = bounds;
         var info = new ProcessStartInfo(Path.Combine(tools, "ffmpeg.exe")) {
@@ -26,6 +26,8 @@ internal sealed class IdlePreview : IDisposable
             "-offset_x", bounds.X.ToString(CultureInfo.InvariantCulture), "-offset_y", bounds.Y.ToString(CultureInfo.InvariantCulture),
             "-video_size", $"{bounds.Width}x{bounds.Height}", "-i", "desktop", "-an", "-vf", "scale=320:-2",
             "-c:v", "mjpeg", "-threads", "1", "-q:v", "5", "-f", "image2pipe", "pipe:1"];
+        if (camera != null) args = ["-hide_banner", "-loglevel", "error", ..CameraDevices.Input(camera, format!),
+            "-an", "-vf", "fps=10,scale=320:-2", "-c:v", "mjpeg", "-threads", "1", "-q:v", "5", "-f", "image2pipe", "pipe:1"];
         foreach (string argument in args) info.ArgumentList.Add(argument);
         process = new Process { StartInfo = info };
         try { process.Start(); }

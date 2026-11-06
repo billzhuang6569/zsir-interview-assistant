@@ -67,10 +67,10 @@ internal sealed class Loopback
     public long Packets { get; private set; }
     public volatile float Peak;
     public Exception? Failure { get; private set; }
-    public Task StartAsync(string path, string deviceId)
+    public Task StartAsync(string path, string deviceId, bool microphone = false, bool synthetic = false)
     {
         requested = true;
-        var thread = new Thread(() => Capture(path, deviceId)) { IsBackground = true, Name = "WASAPI loopback" };
+        var thread = new Thread(() => Capture(path, deviceId, microphone, synthetic)) { IsBackground = true, Name = "WASAPI loopback" };
         thread.SetApartmentState(ApartmentState.MTA);
         thread.Start();
         return started.Task;
@@ -86,7 +86,39 @@ internal sealed class Loopback
             throw Failure;
         }
     }
-    void Capture(string path, string deviceId)
+    void CaptureSynthetic(string path)
+    {
+        Rate = 48000; Channels = 1; DeviceName = "测试麦克风（合成）";
+        byte[] format;
+        using (var memory = new MemoryStream())
+        {
+            using var writer = new BinaryWriter(memory);
+            writer.Write((ushort)1); writer.Write((ushort)1); writer.Write(Rate);
+            writer.Write(Rate * 2); writer.Write((ushort)2); writer.Write((ushort)16); writer.Write((ushort)0);
+            format = memory.ToArray();
+        }
+        using var file = new AudioFile(path, format, 2);
+        double before = Clock.Qpc; OriginUnix = Clock.Unix; OriginQpc = (before + Clock.Qpc) / 2;
+        started.TrySetResult();
+        byte[] samples = new byte[960];
+        while (!stopping)
+        {
+            long target = (long)((Clock.Qpc - OriginQpc) * Rate);
+            while (file.Frames + 480 <= target)
+            {
+                for (int i = 0; i < 480; i++)
+                {
+                    short value = (short)(Math.Sin((file.Frames + i) * 2 * Math.PI * 440 / Rate) * 3276);
+                    samples[i * 2] = (byte)value; samples[i * 2 + 1] = (byte)(value >> 8);
+                }
+                file.AppendAt(file.Frames, samples, 480); Packets++; Peak = .1f;
+            }
+            Thread.Sleep(5);
+        }
+        file.PadTo((long)Math.Ceiling((stopQpc - OriginQpc) * Rate)); Peak = 0;
+    }
+
+    void Capture(string path, string deviceId, bool microphone, bool synthetic)
     {
         IMMDeviceEnumerator? enumerator = null; IMMDevice? device = null;
         IAudioClient? client = null; IAudioCaptureClient? capture = null;
@@ -94,8 +126,9 @@ internal sealed class Loopback
         bool running = false;
         try
         {
+            if (synthetic) { CaptureSynthetic(path); return; }
             enumerator = CoreAudio.Enumerator();
-            CoreAudio.Check(deviceId.Length == 0 ? enumerator.GetDefaultAudioEndpoint(0, 0, out device) : enumerator.GetDevice(deviceId, out device));
+            CoreAudio.Check(deviceId.Length == 0 ? enumerator.GetDefaultAudioEndpoint(microphone ? 1 : 0, 0, out device) : enumerator.GetDevice(deviceId, out device));
             DeviceName = CoreAudio.Name(device);
             var iid = CoreAudio.AudioClientId;
             CoreAudio.Check(device.Activate(ref iid, 23, IntPtr.Zero, out var obj)); client = (IAudioClient)obj;
@@ -110,7 +143,7 @@ internal sealed class Loopback
             bool pcm = tag == 1 || (tag == 65534 && length >= 40 && BitConverter.ToInt32(format, 24) == 1);
             if (Rate <= 0 || Rate > 384000 || Channels < 1 || alignment < 1 || !(floating && bits == 32 || pcm && bits == 16))
                 throw new InvalidOperationException("当前音频格式尚不支持，请在系统中使用 16 位 PCM 或 32 位浮点输出");
-            CoreAudio.Check(client.Initialize(0, 0x20000, 1_000_000, 0, formatPtr, IntPtr.Zero));
+            CoreAudio.Check(client.Initialize(0, microphone ? 0u : 0x20000u, 1_000_000, 0, formatPtr, IntPtr.Zero));
             iid = CoreAudio.CaptureClientId; CoreAudio.Check(client.GetService(ref iid, out var service)); capture = (IAudioCaptureClient)service;
             using var file = new AudioFile(path, format, alignment);
             double before = Clock.Qpc;

@@ -9,6 +9,17 @@ namespace ZSirCapture;
 
 internal sealed class Recorder
 {
+    bool cameraTrack;
+    string mode = "desktop";
+    string microphoneId = "";
+    CameraDevice? cameraDevice;
+    CameraFormat? cameraFormat;
+    Recorder? cameraRecorder;
+    Task? cameraStartTask;
+    bool sharedFolder;
+    string Track => cameraTrack ? "camera" : "desktop";
+    string AudioFileName => cameraTrack ? "microphone.wav" : "system-audio.wav";
+    internal Action<byte[]>? CameraPreview;
     bool stealthInCapture = true;
     readonly string tools;
     readonly Loopback audio = new();
@@ -19,7 +30,7 @@ internal sealed class Recorder
     Task? copyTask;
     Task? finalizerExitTask;
     object? finalizationPolicy;
-    internal bool CleanupPending => stopping && (audio.IsActive || new[] { processExitTask, previewTask, logTask, copyTask, finalizerExitTask }.Any(task => task != null && !task.IsCompleted));
+    internal bool CleanupPending => cameraRecorder?.CleanupPending == true || stopping && (audio.IsActive || new[] { processExitTask, previewTask, logTask, copyTask, finalizerExitTask }.Any(task => task != null && !task.IsCompleted));
     StreamWriter? log;
     readonly Channel<string> logLines = Channel.CreateBounded<string>(new BoundedChannelOptions(256) { SingleReader = true, FullMode = BoundedChannelFullMode.Wait });
     Task? logTask;
@@ -50,7 +61,7 @@ internal sealed class Recorder
     Rectangle captureBounds;
     public string? Folder { get; private set; }
     public string? Failure { get; private set; }
-    public float Peak => audio.Peak;
+    public float Peak => cameraRecorder?.Peak ?? audio.Peak;
     public long AudioPackets => audio.Packets;
     public int AudioDiscontinuities => audio.Discontinuities;
     public double Seconds { get; private set; }
@@ -60,49 +71,83 @@ internal sealed class Recorder
     readonly SemaphoreSlim inputGate = new(1, 1);
     string captureBackend = "gdigrab";
     string captureProbe = "not probed";
+    string cameraError = "";
     string encoder = "libx264";
     string encoderProbe = "not probed";
-    public bool PreviewEnabled { get => previewEnabled; set => previewEnabled = value; }
+    public bool PreviewEnabled { get => previewEnabled; set { previewEnabled = value; if (cameraRecorder != null) cameraRecorder.PreviewEnabled = value; } }
     public Action<byte[]>? Preview;
     public string DeviceName => audio.DeviceName;
     internal Process? Encoder => process;
+    internal Process? CameraEncoder => cameraTrack ? process : cameraRecorder?.process;
     public Recorder(string toolsDirectory) { tools = toolsDirectory; }
 
-    public async Task StartAsync(string root, Rectangle bounds, string audioDevice, string quality = "standard", bool systemAudio = true, string outputProfile = "native", bool stealthInCapture = true)
+    public async Task StartAsync(string root, Rectangle bounds, string audioDevice, string quality = "standard", bool systemAudio = true, string outputProfile = "native", bool stealthInCapture = true,
+        string mode = "desktop", string cameraId = "", string microphoneId = "")
+    {
+        if (mode is not ("desktop" or "camera" or "both")) throw new ArgumentException("无效的录制机位", nameof(mode));
+        if (Folder != null) throw new InvalidOperationException("每个录制实例只能使用一次");
+        this.mode = mode; this.microphoneId = microphoneId;
+        if (mode is "camera" or "both")
+        {
+            cameraDevice = await CameraDevices.ResolveAsync(tools, cameraId);
+            if (!CameraDevices.Fake) { CapturePrivacy.Check("webcam"); CapturePrivacy.Check("microphone"); }
+            cameraFormat = CameraDevices.ChooseFormat(await CameraDevices.FormatsAsync(tools, cameraDevice));
+            if (!CameraDevices.Fake)
+            {
+                var microphones = CoreAudio.Devices(1);
+                if (microphones.Count == 1) throw new InvalidOperationException("未检测到麦克风，请连接麦克风后点击重新检测");
+                if (microphoneId.Length != 0 && !microphones.Any(d => d.Id == microphoneId))
+                    throw new InvalidOperationException("所选麦克风已断开，请连接原麦克风或在设置中重新选择");
+            }
+        }
+        cameraTrack = mode == "camera";
+        await StartTrackAsync(root, bounds, audioDevice, quality, cameraTrack || systemAudio, outputProfile, stealthInCapture);
+    }
+
+    async Task StartTrackAsync(string root, Rectangle bounds, string audioDevice, string quality, bool systemAudio, string outputProfile, bool stealthInCapture, string? takeFolder = null)
     {
         this.stealthInCapture = stealthInCapture;
         this.quality = quality; this.systemAudio = systemAudio; captureBounds = bounds;
         this.outputProfile = outputProfile;
-        outputSize = RecordingOptions.OutputSize(outputProfile, bounds.Width, bounds.Height);
-        targetVideoBitRate = RecordingOptions.BitRate(quality, outputSize.Width, outputSize.Height);
-        startupCommitBudget = ResourceBudget.EstimateStartup(bounds.Width, bounds.Height, outputSize.Width, outputSize.Height, encoderThreads);
+        outputSize = cameraTrack ? (cameraFormat!.Width / 2 * 2, cameraFormat!.Height / 2 * 2) : RecordingOptions.OutputSize(outputProfile, bounds.Width, bounds.Height);
+        targetVideoBitRate = cameraTrack ? 8_000_000 : RecordingOptions.BitRate(quality, outputSize.Width, outputSize.Height);
+        startupCommitBudget = ResourceBudget.EstimateStartup(cameraTrack ? outputSize.Width : bounds.Width, cameraTrack ? outputSize.Height : bounds.Height, outputSize.Width, outputSize.Height, encoderThreads);
+        if (mode == "both") startupCommitBudget += ResourceBudget.EstimateStartup(cameraFormat!.Width, cameraFormat!.Height, cameraFormat!.Width, cameraFormat!.Height, encoderThreads) - ResourceBudget.SafetyFloor;
+        if (cameraTrack || mode == "both") startupCommitBudget += ResourceBudget.CameraInputBuffer;
         ResourceBudget.Check(startupCommitBudget);
         if (Folder != null) throw new InvalidOperationException("每个录制实例只能使用一次");
         foreach (string tool in new[] { "ffmpeg.exe", "ffprobe.exe" })
             if (!File.Exists(Path.Combine(tools, tool))) throw new FileNotFoundException("录制组件缺失，请重新下载完整安装包并完整解压后打开；不要只复制 EXE。已有录制素材不会受影响", tool);
         Directory.CreateDirectory(root);
-        CheckSpace(root, 10_000_000_000);
-        Folder = Path.Combine(root, "Take-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8]);
+        CheckSpace(root, mode == "both" ? 12_000_000_000 : 10_000_000_000);
+        Folder = takeFolder ?? Path.Combine(root, "Take-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(Folder);
-        lease = new(Path.Combine(Folder, ".recording.lock"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
+        sharedFolder = takeFolder != null;
+        if (!sharedFolder) lease = new(Path.Combine(Folder, ".recording.lock"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None);
         try
         {
             var gate = await RunAsync("ffmpeg.exe", ["-hide_banner", "-h", "filter=select"], TimeSpan.FromSeconds(5));
             previewGateSupported = (gate.Output + gate.Error).Contains("ZSir preview gate v1.");
             if (!previewGateSupported) throw new InvalidOperationException("录制组件缺少按需预览能力，请使用 0.4.0 配套工具包");
-            await ProbeCaptureAsync(bounds);
-            await ProbeEncoderAsync();
+            if (!cameraTrack) { await ProbeCaptureAsync(bounds); await ProbeEncoderAsync(); }
+            else { captureBackend = CameraDevices.Fake ? "lavfi" : "dshow"; encoderProbe = "bounded libx264 camera encoder"; }
+            if (mode == "both")
+            {
+                cameraRecorder = new Recorder(tools) { cameraTrack = true, mode = "camera", microphoneId = microphoneId,
+                    cameraDevice = cameraDevice, cameraFormat = cameraFormat, PreviewEnabled = PreviewEnabled, Preview = bytes => CameraPreview?.Invoke(bytes) };
+                cameraStartTask = cameraRecorder.StartTrackAsync(root, bounds, "", quality, true, outputProfile, stealthInCapture, Folder);
+            }
             Report("preparing");
-            if (systemAudio) await audio.StartAsync(Path.Combine(Folder, "system-audio.wav"), audioDevice).WaitAsync(TimeSpan.FromSeconds(10));
+            if (systemAudio) await audio.StartAsync(Path.Combine(Folder, AudioFileName), cameraTrack ? microphoneId : audioDevice, cameraTrack, cameraTrack && CameraDevices.Fake).WaitAsync(TimeSpan.FromSeconds(10));
             clockOffset = Clock.Unix - Clock.Qpc;
             int width = bounds.Width / 2 * 2, height = bounds.Height / 2 * 2;
             int rate = targetVideoBitRate;
-            log = new StreamWriter(Path.Combine(Folder, "capture.log"), false) { AutoFlush = true };
+            log = new StreamWriter(Path.Combine(Folder, cameraTrack ? "camera-capture.log" : "capture.log"), false) { AutoFlush = true };
             logTask = Task.Run(WriteLogAsync);
             process = new Process { StartInfo = StartInfo("ffmpeg.exe", [
                 "-hide_banner", "-n", "-nostats", "-stats_period", "1", "-progress", "pipe:2",
                 "-filter_complex_threads", "1", "-thread_queue_size", "3",
-                ..(captureBackend == "ddagrab" ? new[] { "-f", "lavfi", "-use_wallclock_as_timestamps", "1", "-i", $"ddagrab=output_idx=0:framerate=30:video_size={width}x{height}" } :
+                ..(cameraTrack ? CameraDevices.Input(cameraDevice!, cameraFormat!) : captureBackend == "ddagrab" ? new[] { "-f", "lavfi", "-use_wallclock_as_timestamps", "1", "-i", $"ddagrab=output_idx=0:framerate=30:video_size={width}x{height}" } :
                     new[] { "-f", "gdigrab", "-framerate", "30", "-offset_x", N(bounds.X), "-offset_y", N(bounds.Y), "-video_size", $"{width}x{height}", "-i", "desktop" }),
                 "-filter_complex",  $"[0:v]{(captureBackend == "ddagrab" ? "hwdownload,format=bgra," : "")}split=2[raw][p];[raw]scale={outputSize.Width}:{outputSize.Height}[v];[p]fps=10,select@preview=1,scale=320:-2[pv]",
                 "-map", "[v]", "-an", "-c:v", encoder,
@@ -110,7 +155,7 @@ internal sealed class Recorder
                 "-threads:v", N(encoderThreads),
                 "-r:v", N(RecordingOptions.FramesPerSecond), "-fps_mode:v", "cfr",
                 "-pix_fmt", "yuv420p", "-flush_packets", "1", "-movflags", "+frag_keyframe+empty_moov+default_base_moof",
-                Path.Combine(Folder, "desktop-video.mp4"),
+                Path.Combine(Folder, Track + "-video.mp4"),
                 "-map", "[pv]", "-an", "-c:v", "mjpeg", "-fps_mode:v", "passthrough", "-q:v", "5", "-f", "image2pipe", "pipe:1"
             ]) };
             process.StartInfo.RedirectStandardInput = true;
@@ -118,6 +163,7 @@ internal sealed class Recorder
             {
                 if (e.Data == null) return;
                 string line = e.Data;
+                if (cameraTrack && cameraError.Length < 65536) cameraError += line + "\n";
                 if (!logLines.Writer.TryWrite(line)) Interlocked.Increment(ref droppedLogLines);
                 var match = Regex.Match(line, @"Duration: N/A, start: ([0-9]+\.[0-9]+)");
                 if (match.Success) videoStartUnix = double.Parse(match.Groups[1].Value, CultureInfo.InvariantCulture);
@@ -138,7 +184,10 @@ internal sealed class Recorder
             previewTask = Task.Run(() => ReadPreviewAsync(previewStream));
             var exited = process.WaitForExitAsync();
             var first = await Task.WhenAny(videoReady.Task, exited, Task.Delay(15_000));
-            if (first != videoReady.Task || !videoStartUnix.HasValue) throw new InvalidOperationException("未能启动桌面采集，请查看 capture.log");
+            if (first != videoReady.Task || !videoStartUnix.HasValue)
+                throw new InvalidOperationException(cameraTrack ? CameraDevices.Error(cameraError) : "未能启动桌面采集，请查看 capture.log");
+            if (cameraStartTask != null) await cameraStartTask;
+            cameraRecorder?.CheckHealth();
             watchdogCancellation = new();
             watchdogTask = Task.Run(() => WatchHealthAsync(watchdogCancellation.Token));
             Report("recording", new { bounds, audio.Rate, audio.Channels, videoStartUnix, audioStartUnix = audio.OriginUnix });
@@ -151,7 +200,7 @@ internal sealed class Recorder
             string? cleanupError = null;
             try
             {
-                try { await StopInputsAsync(); }
+                try { await Task.WhenAll(StopInputsAsync(), StopCameraAsync(Failure)); }
                 catch (Exception cleanup) { cleanupError = cleanup.Message; }
                 try { Report("start_failed", new { error = Failure, cleanupError }); }
                 catch (Exception reportError) when (reportError is IOException or UnauthorizedAccessException)
@@ -167,20 +216,22 @@ internal sealed class Recorder
         if (Failure != null) throw new IOException(Failure);
         if (stopping) return;
         ResourceBudget.Check();
+        cameraRecorder?.CheckHealth();
         if (Stopwatch.GetElapsedTime(Interlocked.Read(ref lastProgress)).TotalSeconds > 15)
             throw new IOException("编码器超过 15 秒没有写入进度，原始素材已保留");
         if (Failure != null) throw new IOException(Failure);
-        if (systemAudio && audio.Failure != null) throw new InvalidOperationException("系统声音采集中断：" + audio.Failure.Message);
+        if (systemAudio && audio.Failure != null) throw new InvalidOperationException((cameraTrack ? "麦克风采集中断：" : "系统声音采集中断：") + audio.Failure.Message);
         lock (processGate)
         {
             if (stopping) return;
-            if (process?.HasExited == true) throw new InvalidOperationException("桌面编码进程已退出，原始素材已保留");
+            if (process?.HasExited == true) throw new InvalidOperationException(cameraTrack ? CameraDevices.Error(cameraError) : "桌面编码进程已退出，原始素材已保留");
         }
         if (Math.Abs(Clock.Unix - Clock.Qpc - clockOffset) > .25) throw new InvalidOperationException("系统时间发生跳变，已停止以避免音画错位");
         if (Folder != null)
         {
-            string video = Path.Combine(Folder, "desktop-video.mp4");
-            long reserve = (File.Exists(video) ? new FileInfo(video).Length : 0) + (long)Math.Max(0, Seconds) * 24_000;
+            string video = Path.Combine(Folder, Track + "-video.mp4");
+            long cameraBytes = cameraRecorder?.Folder != null && File.Exists(Path.Combine(Folder, "camera-video.mp4")) ? new FileInfo(Path.Combine(Folder, "camera-video.mp4")).Length : 0;
+            long reserve = cameraBytes + (File.Exists(video) ? new FileInfo(video).Length : 0) + (long)Math.Max(0, Seconds) * 24_000;
             CheckSpace(Folder, 2_000_000_000 + reserve);
         }
     }
@@ -198,23 +249,25 @@ internal sealed class Recorder
         Failure ??= reason;
         try
         {
-            await StopInputsAsync();
+            Task cameraStop = StopCameraAsync(reason);
+            try { await StopInputsAsync(); }
+            finally { await cameraStop; }
             if (videoStartUnix == null) throw new InvalidOperationException("缺少视频起始时间，保留分离素材以供检查");
-            var videoInfo = await ProbeAsync(Path.Combine(Folder, "desktop-video.mp4"));
+            var videoInfo = await ProbeAsync(Path.Combine(Folder, Track + "-video.mp4"));
             double duration = double.Parse(videoInfo.GetProperty("format").GetProperty("duration").GetString()!, CultureInfo.InvariantCulture);
-            if (!double.IsFinite(duration) || duration <= 0) throw new InvalidOperationException("桌面文件时长无效");
+            if (!double.IsFinite(duration) || duration <= 0) throw new InvalidOperationException("视频文件时长无效");
             if (!systemAudio) {
-                string silentOutput = Path.Combine(Folder, "desktop.mp4");
-                CheckSpace(Folder, new FileInfo(Path.Combine(Folder, "desktop-video.mp4")).Length + 512_000_000);
+                string silentOutput = Path.Combine(Folder, Track + ".mp4");
+                CheckSpace(Folder, new FileInfo(Path.Combine(Folder, Track + "-video.mp4")).Length + 512_000_000);
                 if (!videoInfo.GetProperty("streams").EnumerateArray().Any(x => x.GetProperty("codec_type").GetString() == "video")) throw new InvalidOperationException("输出缺少视频轨道");
-                string copyPartial = Path.Combine(Folder, "desktop-partial.mp4");
-                var copyBudget = FinalizationBudget.Calculate(new FileInfo(Path.Combine(Folder, "desktop-video.mp4")).Length, duration, false, false);
+                string copyPartial = Path.Combine(Folder, Track + "-partial.mp4");
+                var copyBudget = FinalizationBudget.Calculate(new FileInfo(Path.Combine(Folder, Track + "-video.mp4")).Length, duration, false, false);
                 finalizationPolicy = FinalizationBudget.Describe(copyBudget);
                 Report("finalizing", new { duration, finalizationPolicy });
                 using var copyCancellation = new CancellationTokenSource();
                 long copiedBytes = 0;
                 var copy = copyTask = Task.Run(async () => {
-                    await using var source = new FileStream(Path.Combine(Folder, "desktop-video.mp4"), FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.Asynchronous);
+                    await using var source = new FileStream(Path.Combine(Folder, Track + "-video.mp4"), FileMode.Open, FileAccess.Read, FileShare.Read, 65536, FileOptions.Asynchronous);
                     await using var destination = new FileStream(copyPartial, FileMode.CreateNew, FileAccess.Write, FileShare.None, 65536, FileOptions.Asynchronous);
                     byte[] buffer = new byte[65536]; int count;
                     while ((count = await source.ReadAsync(buffer, copyCancellation.Token)) > 0)
@@ -232,35 +285,44 @@ internal sealed class Recorder
                     throw;
                 }
                 File.Move(copyPartial, silentOutput);
-                Report(Failure == null ? "finalized_unverified" : "needs_review", new { duration, error = Failure, output = "desktop.mp4" });
+                Report(Failure == null ? "finalized_unverified" : "needs_review", new { duration, error = Failure, output = Track + ".mp4" });
                 return silentOutput;
             }
             double offset = videoStartUnix.Value - audio.OriginUnix;
             if (offset < 0 || offset > 30) throw new InvalidOperationException("音画起始偏移异常，保留原素材");
-            CheckSpace(Folder, new FileInfo(Path.Combine(Folder, "desktop-video.mp4")).Length + (long)(duration * 24_000) + 512_000_000);
-            string partial = Path.Combine(Folder, "desktop-partial.mp4");
-            var muxBudget = FinalizationBudget.Calculate(checked(new FileInfo(Path.Combine(Folder, "desktop-video.mp4")).Length + new FileInfo(Path.Combine(Folder, "system-audio.wav")).Length), duration, true, true);
+            CheckSpace(Folder, new FileInfo(Path.Combine(Folder, Track + "-video.mp4")).Length + (long)(duration * 24_000) + 512_000_000);
+            string partial = Path.Combine(Folder, Track + "-partial.mp4");
+            var muxBudget = FinalizationBudget.Calculate(checked(new FileInfo(Path.Combine(Folder, Track + "-video.mp4")).Length + new FileInfo(Path.Combine(Folder, AudioFileName)).Length), duration, true, true);
             finalizationPolicy = FinalizationBudget.Describe(muxBudget);
             Report("finalizing", new { duration, offset, reason, finalizationPolicy });
-            var result = await RunAsync("ffmpeg.exe", ["-hide_banner", "-nostdin", "-n", "-ss", N(offset), "-i", Path.Combine(Folder, "system-audio.wav"),
-                "-i", Path.Combine(Folder, "desktop-video.mp4"), "-map", "1:v:0", "-map", "0:a:0", "-c:v", "copy",
+            var result = await RunAsync("ffmpeg.exe", ["-hide_banner", "-nostdin", "-n", "-ss", N(offset), "-i", Path.Combine(Folder, AudioFileName),
+                "-i", Path.Combine(Folder, Track + "-video.mp4"), "-map", "1:v:0", "-map", "0:a:0", "-c:v", "copy",
                 "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2", "-af", "apad", "-t", N(duration),
                 "-movflags", "+faststart", partial], muxBudget, monitorIo: true);
-            await File.WriteAllTextAsync(Path.Combine(Folder, "finalize.log"), result.Error);
-            if (result.Code != 0) throw new InvalidOperationException("音画合成失败，原视频和系统声音均已保留");
+            await File.WriteAllTextAsync(Path.Combine(Folder, cameraTrack ? "camera-finalize.log" : "finalize.log"), result.Error);
+            if (result.Code != 0) throw new InvalidOperationException("音画合成失败，原视频和音频均已保留");
             var final = await ProbeAsync(partial);
             var streams = final.GetProperty("streams").EnumerateArray().ToArray();
             if (!streams.Any(x => x.GetProperty("codec_type").GetString() == "video") || !streams.Any(x => x.GetProperty("codec_type").GetString() == "audio"))
                 throw new InvalidOperationException("输出缺少音频或视频轨道");
-            string output = Path.Combine(Folder, "desktop.mp4");
+            string output = Path.Combine(Folder, Track + ".mp4");
             File.Move(partial, output);
             Failure ??= audio.Failure?.Message;
-            if (audio.Discontinuities > 0) Failure ??= "系统声音发生不连续，请检查音轨";
-            Report(Failure == null ? "finalized_unverified" : "needs_review", new { duration, offset, audio.Packets, audio.Discontinuities, error = Failure, output = "desktop.mp4" });
+            if (audio.Discontinuities > 0) Failure ??= (cameraTrack ? "麦克风" : "系统声音") + "发生不连续，请检查音轨";
+            Report(Failure == null ? "finalized_unverified" : "needs_review", new { duration, offset, audio.Packets, audio.Discontinuities, error = Failure, output = Track + ".mp4" });
             return output;
         }
         catch (Exception ex) { Failure ??= ex.Message; Report("needs_review", new { error = Failure }); throw; }
         finally { ReleaseLeaseAfterCleanup(); }
+    }
+
+    async Task StopCameraAsync(string? reason)
+    {
+        if (cameraRecorder == null) return;
+        if (cameraStartTask != null)
+            try { await cameraStartTask; } catch { /* The child has already performed startup cleanup. */ }
+        if (cameraRecorder.Folder != null) await cameraRecorder.StopAsync(reason);
+        Failure ??= cameraRecorder.Failure;
     }
 
     void ReleaseLeaseAfterCleanup()
@@ -271,9 +333,15 @@ internal sealed class Recorder
         if (!CleanupPending) { ownedLease.Dispose(); return; }
         // A timed-out writer still owns the Take. Keep its exclusion lease until
         // actual worker completion, even after the UI leaves the saving state.
-        var workers = new[] { audio.Cleanup, processExitTask, previewTask, logTask, copyTask, finalizerExitTask }
+        var workers = new[] { cameraRecorder?.WaitForCleanupAsync(), cameraStartTask, audio.Cleanup, processExitTask, previewTask, logTask, copyTask, finalizerExitTask }
             .Where(task => task != null).Cast<Task>().ToArray();
         _ = ReleaseCleanupLeaseAsync(ownedLease, workers);
+    }
+
+    async Task WaitForCleanupAsync()
+    {
+        var workers = new[] { audio.Cleanup, processExitTask, previewTask, logTask, copyTask, finalizerExitTask };
+        foreach (var task in workers) if (task != null) try { await task; } catch { }
     }
 
     internal static async Task ReleaseCleanupLeaseAsync(FileStream ownedLease, Task[] workers)
@@ -614,11 +682,20 @@ internal sealed class Recorder
     }
     void Report(string state, object? details = null)
     {
-        if (Folder == null) return;
+        if (Folder == null || sharedFolder) return;
         string path = Path.Combine(Folder, "report.json"), temporary = path + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(new { state, platform = "windows", mode = "desktop", stealthInCapture, videoStartUnix, audioStartUnix = audio.OriginUnix, quality, qualityVersion = 1, systemAudio, outputProfile, outputWidth = outputSize.Width, outputHeight = outputSize.Height, framesPerSecond = 30, captureBackend, captureProbe, encoder, encoderProbe, previewGateSupported, previewGateState, encoderThreads, resourcePolicy = "experimental unmeasured caps; startup estimate is conservative admission heuristic, not a measured peak guarantee", startupCommitBudgetBytes = startupCommitBudget, runtimeCommitSafetyFloorBytes = ResourceBudget.SafetyFloor, filterThreads = 1, inputQueuePackets = 3, lookaheadFrames = 10, diagnostics = new { droppedLogLines = Interlocked.Read(ref droppedLogLines), writtenFrames = Interlocked.Read(ref writtenFrames), encoderDuplicatedFrames = Interlocked.Read(ref duplicatedFrames), encoderDroppedFrames = Interlocked.Read(ref droppedFrames), capturedFrames = (long?)null, scheduledFrames = (long?)null, note = "FFmpeg output progress only; source admission and queue counters unavailable for the selected FFmpeg capture backend" }, targetVideoBitRate, captureBounds, finalizationPolicy, cleanupPending = CleanupPending, device = audio.DeviceName, details, updatedAt = DateTimeOffset.UtcNow }, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(temporary, JsonSerializer.Serialize(new { state, platform = "windows", mode, camera = cameraDevice == null || cameraFormat == null ? null : new { name = cameraDevice.Name, id = cameraDevice.Id,
+            format = cameraFormat.Vcodec ?? cameraFormat.PixelFormat, vcodec = cameraFormat.Vcodec, pixel_format = cameraFormat.PixelFormat,
+            width = cameraFormat.Width, height = cameraFormat.Height, fps = cameraFormat.Fps },
+            microphone = cameraRecorder?.audio.DeviceName ?? (cameraTrack ? audio.DeviceName : null),
+            tracks = TrackStarts(), outputFiles = new[] { "camera.mp4", "desktop.mp4" }.Where(name => File.Exists(Path.Combine(Folder!, name))).ToArray(), stealthInCapture, videoStartUnix, audioStartUnix = audio.OriginUnix, quality, qualityVersion = 1, systemAudio = !cameraTrack && systemAudio, outputProfile, outputWidth = outputSize.Width, outputHeight = outputSize.Height, framesPerSecond = 30, captureBackend, captureProbe, encoder, encoderProbe, previewGateSupported, previewGateState, encoderThreads, resourcePolicy = "experimental unmeasured caps; startup estimate is conservative admission heuristic, not a measured peak guarantee", startupCommitBudgetBytes = startupCommitBudget, runtimeCommitSafetyFloorBytes = ResourceBudget.SafetyFloor, filterThreads = 1, inputQueuePackets = 3, lookaheadFrames = 10, diagnostics = new { droppedLogLines = Interlocked.Read(ref droppedLogLines), writtenFrames = Interlocked.Read(ref writtenFrames), encoderDuplicatedFrames = Interlocked.Read(ref duplicatedFrames), encoderDroppedFrames = Interlocked.Read(ref droppedFrames), capturedFrames = (long?)null, scheduledFrames = (long?)null, note = "FFmpeg output progress only; source admission and queue counters unavailable for the selected FFmpeg capture backend" }, targetVideoBitRate, captureBounds, finalizationPolicy, cleanupPending = CleanupPending, device = audio.DeviceName, details, updatedAt = DateTimeOffset.UtcNow }, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(temporary, path, true);
     }
+    object TrackStarts() => new {
+        desktop = cameraTrack ? null : new { videoStartUnix, audioStartUnix = systemAudio ? (double?)audio.OriginUnix : null },
+        camera = cameraTrack ? new { videoStartUnix, audioStartUnix = (double?)audio.OriginUnix } :
+            cameraRecorder == null ? null : new { videoStartUnix = cameraRecorder.videoStartUnix, audioStartUnix = (double?)cameraRecorder.audio.OriginUnix }
+    };
     static string N(object value) => Convert.ToString(value, CultureInfo.InvariantCulture)!;
     public static void CheckSpace(string path, long minimum)
     {

@@ -141,14 +141,14 @@ internal static class Theme
 
     internal sealed class SegmentButton : Button
     {
-        readonly bool selected;
+        internal bool Selected;
         static readonly Color DisabledInk = Color.FromArgb(
             (int)(Panel.R + (Muted.R - Panel.R) * .6),
             (int)(Panel.G + (Muted.G - Panel.G) * .6),
             (int)(Panel.B + (Muted.B - Panel.B) * .6));
         internal SegmentButton(string text, bool selected)
         {
-            Text = text; this.selected = selected; Enabled = selected; Cursor = Cursors.Hand;
+            Text = text; Selected = selected; Enabled = true; Cursor = Cursors.Hand;
             AutoSize = true; AutoSizeMode = AutoSizeMode.GrowAndShrink;
             FlatStyle = FlatStyle.Flat; UseVisualStyleBackColor = false; BackColor = Panel;
             SetStyle(ControlStyles.UserPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
@@ -156,9 +156,9 @@ internal static class Theme
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.Clear(Panel);
-            TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, selected ? Accent : DisabledInk,
+            TextRenderer.DrawText(e.Graphics, Text, Font, ClientRectangle, Enabled ? (Selected ? Accent : Muted) : DisabledInk,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis);
-            if (selected)
+            if (Selected)
             {
                 using var pen = new Pen(Accent, LogicalToDeviceUnits(1));
                 e.Graphics.DrawRectangle(pen, Rectangle.Inflate(ClientRectangle, -1, -1));
@@ -241,7 +241,7 @@ internal static class Theme
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
-            if (Image == null) TextRenderer.DrawText(e.Graphics, "正在加载桌面预览", Font, ClientRectangle, Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+            if (Image == null) TextRenderer.DrawText(e.Graphics, "等待预览", Font, ClientRectangle, Muted, TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             int inset = LogicalToDeviceUnits(8);
             var caption = new Rectangle(inset, inset, Math.Max(1, Width - inset * 2), Font.Height + inset);
             using var fill = new SolidBrush(Color.FromArgb(210, Background)); e.Graphics.FillRectangle(fill, caption);

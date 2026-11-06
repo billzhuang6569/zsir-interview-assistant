@@ -3,6 +3,11 @@ using System.Text.Json;
 namespace ZSirCapture;
 internal sealed class RecordingOptions
 {
+    public string Mode { get; set; } = "desktop";
+    public string CameraId { get; set; } = "";
+    public string MicrophoneId { get; set; } = "";
+    internal bool IncludesCamera => Mode is "camera" or "both";
+    internal bool IncludesDesktop => Mode is "desktop" or "both";
     public string ScreenId { get; set; } = "";
     public string AudioId { get; set; } = "";
     public string Quality { get; set; } = "standard";

@@ -17,8 +17,13 @@ internal static class SmokeTest
         Directory.CreateDirectory(root);
         var report = new Dictionary<string, object?> { ["startedAt"] = DateTimeOffset.UtcNow, ["productClient"] = true, ["microphoneOpened"] = false };
         TestScene? scene = null;
+        string originalMode = form.Options.Mode;
+        string originalCamera = form.Options.CameraId, originalMic = form.Options.MicrophoneId;
+        string? originalFake = Environment.GetEnvironmentVariable("ZSIR_FAKE_CAMERA");
         try
         {
+            form.SetMode("desktop", persist: false);
+            CheckCameraParsers(); report["cameraParsersPassed"] = true;
             int duration = int.TryParse(Environment.GetEnvironmentVariable("ZSIR_SMOKE_SECONDS"), out int requested) ? Math.Clamp(requested, 18, 7200) : 18;
             int spacing = duration == 18 ? 5 : (duration - 8) / 2;
             var analysisTimeout = TimeSpan.FromSeconds(Math.Max(60, duration / 2));
@@ -227,6 +232,81 @@ internal static class SmokeTest
                 }
                 report["repeatCycles"] = cycleMedia;
             }
+            if (CameraDevices.Fake)
+            {
+                string missingCameraRoot = Path.Combine(root, "missing-camera");
+                var missingCamera = new Recorder(tools); bool missingCameraRefused = false;
+                try { await missingCamera.StartAsync(missingCameraRoot, Screen.PrimaryScreen!.Bounds, "", mode: "camera", cameraId: "unplugged-camera-id"); }
+                catch (InvalidOperationException ex) { missingCameraRefused = ex.Message.Contains("所选摄像头已断开"); }
+                if (!missingCameraRefused || missingCamera.Folder != null || Directory.Exists(missingCameraRoot)) throw new Exception("Selected camera was silently replaced");
+                report["missingCameraNotReplaced"] = true;
+                form.Options.CameraId = ""; form.Options.MicrophoneId = "";
+                var cameraTests = new List<object>();
+                foreach (string mode in new[] { "camera", "both" })
+                {
+                    form.SetMode(mode, persist: false);
+                    await form.StartRecordingAsync();
+                    if (!form.IsRecording) throw form.LastError ?? new Exception("Camera smoke start failed: " + mode);
+                    var session = form.CurrentRecorder!;
+                    await Task.Delay(8000);
+                    session.CheckHealth();
+                    await form.StopRecordingAsync();
+                    if (form.LastError != null) throw form.LastError;
+                    string folder = form.LastFolder!;
+                    foreach (string track in mode == "both" ? new[] { "camera", "desktop" } : new[] { "camera" })
+                    {
+                        var media = await session.ProbeAsync(Path.Combine(folder, track + ".mp4"));
+                        var streams = media.GetProperty("streams").EnumerateArray().ToArray();
+                        if (!streams.Any(v => v.GetProperty("codec_type").GetString() == "video" && v.GetProperty("codec_name").GetString() == "h264") ||
+                            (track == "camera" || form.Options.SystemAudio) && !streams.Any(a => a.GetProperty("codec_type").GetString() == "audio" && a.GetProperty("codec_name").GetString() == "aac"))
+                            throw new Exception("Camera smoke codecs invalid: " + track);
+                        double seconds = double.Parse(media.GetProperty("format").GetProperty("duration").GetString()!, CultureInfo.InvariantCulture);
+                        if (Math.Abs(seconds - 8) > 2) throw new Exception("Camera smoke duration invalid: " + seconds);
+                        var decoded = await session.RunAsync("ffmpeg.exe", ["-v", "error", "-xerror", "-i", Path.Combine(folder, track + ".mp4"), "-f", "null", "NUL"], TimeSpan.FromSeconds(30));
+                        if (decoded.Code != 0) throw new Exception("Camera decode failed: " + decoded.Error);
+                        cameraTests.Add(new { mode, track, folder, media });
+                    }
+                    using var takeReport = JsonDocument.Parse(File.ReadAllText(Path.Combine(folder, "report.json")));
+                    var data = takeReport.RootElement;
+                    if (data.GetProperty("mode").GetString() != mode || data.GetProperty("camera").GetProperty("name").GetString() != "测试摄像头" ||
+                        data.GetProperty("camera").GetProperty("id").GetString() != "zsir-fake-camera" ||
+                        data.GetProperty("camera").GetProperty("width").GetInt32() != 1280 ||
+                        data.GetProperty("camera").GetProperty("height").GetInt32() != 720 ||
+                        data.GetProperty("camera").GetProperty("fps").GetDouble() != 30 ||
+                        data.GetProperty("tracks").GetProperty("camera").GetProperty("videoStartUnix").GetDouble() <= 0 ||
+                        !data.GetProperty("outputFiles").EnumerateArray().Any(f => f.GetString() == "camera.mp4"))
+                        throw new Exception("Camera report invalid");
+                }
+                report["cameraTests"] = cameraTests;
+                form.SetMode("both", persist: false);
+                await form.StartRecordingAsync();
+                if (!form.IsRecording) throw form.LastError ?? new Exception("Dual-track failure fixture did not start");
+                var failedCamera = form.CurrentRecorder!;
+                await Task.Delay(2000);
+                failedCamera.CameraEncoder!.Kill(entireProcessTree: true);
+                for (int i = 0; i < 200 && form.IsBusy; i++) await Task.Delay(200);
+                if (form.IsRecording) await form.StopRecordingAsync("摄像头异常测试");
+                if (form.IsBusy || form.LastError == null || failedCamera.CleanupPending) throw new Exception("Camera failure did not stop the whole Take");
+                foreach (string raw in new[] { "desktop-video.mp4", "system-audio.wav", "camera-video.mp4", "microphone.wav" })
+                    if ((raw != "system-audio.wav" || form.Options.SystemAudio) && !File.Exists(Path.Combine(failedCamera.Folder!, raw))) throw new Exception("Camera failure lost raw track: " + raw);
+                using (var failedReport = JsonDocument.Parse(File.ReadAllText(Path.Combine(failedCamera.Folder!, "report.json"))))
+                    if (failedReport.RootElement.GetProperty("state").GetString() != "needs_review") throw new Exception("Camera failure was reported as success");
+                report["cameraFailureStopsBothAndPreservesRaw"] = true;
+            }
+            else report["cameraTestsSkipped"] = "设置 ZSIR_FAKE_CAMERA=1 运行无硬件合成摄像头测试";
+            form.SetMode("desktop", persist: false);
+            await form.ReleaseIdleForSettingsAsync();
+            Environment.SetEnvironmentVariable("ZSIR_FAKE_CAMERA", null);
+            if ((await CameraDevices.DiscoverAsync(tools)).Count == 0)
+            {
+                string emptyRoot = Path.Combine(root, "no-camera");
+                var absent = new Recorder(tools); bool refused = false;
+                try { await absent.StartAsync(emptyRoot, Screen.PrimaryScreen!.Bounds, "", mode: "camera"); }
+                catch (InvalidOperationException ex) { refused = ex.Message == CameraDevices.NoCamera; }
+                if (!refused || absent.Folder != null || Directory.Exists(emptyRoot)) throw new Exception("No camera must refuse before creating a Take");
+                report["noCameraRejectedWithoutTake"] = true;
+            }
+            else report["noCameraCheckSkipped"] = "此机器有真实摄像头";
             report["state"] = "passed";
         }
         catch (Exception ex)
@@ -237,43 +317,87 @@ internal static class SmokeTest
         finally
         {
             scene?.Dispose();
+            Environment.SetEnvironmentVariable("ZSIR_FAKE_CAMERA", originalFake);
+            form.Options.CameraId = originalCamera; form.Options.MicrophoneId = originalMic;
+            form.SetMode(originalMode, persist: false);
             report["finishedAt"] = DateTimeOffset.UtcNow;
             await File.WriteAllTextAsync(Path.Combine(root, "acceptance.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
             form.Close();
         }
     }
+    internal static void CheckCameraParsers()
+    {
+        const string devices = """
+            [dshow @ 0000] "集成摄像头" (video)
+            [dshow @ 0000]   Alternative name "@device_pnp_\\?\usb#one"
+            [dshow @ 0001] "集成摄像头" (video)
+            [dshow @ 0001]   Alternative name "@device_pnp_\\?\usb#two"
+            [dshow @ 0000] "话筒" (audio)
+            [dshow @ 0000]   Alternative name "@device_cm_audio"
+            """;
+        var parsed = CameraDevices.ParseDevices(devices);
+        if (parsed.Count != 2 || parsed[0].Name != "集成摄像头" || parsed[0].Id == parsed[1].Id || !parsed[0].Id.EndsWith("usb#one") ||
+            CameraDevices.ParseDevices("Could not enumerate video devices").Count != 0) throw new Exception("Camera device parser failed");
+        const string options = """
+            [dshow @ 0000] vcodec=mjpeg  min s=1920x1080 fps=15 max s=1920x1080 fps=60
+            [dshow @ 0000] vcodec=mjpeg  min s=1280x720 fps=30 max s=1280x720 fps=30
+            [dshow @ 0000] pixel_format=yuyv422  min s=640x480 fps=5 max s=1920x1080 fps=30
+            [dshow @ 0000] vcodec=mjpeg min s=3840x2160 fps=30 max s=3840x2160 fps=30
+            """;
+        var formats = CameraDevices.ParseFormats(options);
+        var chosen = CameraDevices.ChooseFormat(formats);
+        if (chosen.Vcodec != "mjpeg" || chosen.Width != 1920 || chosen.Fps != 30) throw new Exception("1080 MJPEG preference failed");
+        chosen = CameraDevices.ChooseFormat(formats.Where(f => f.Vcodec != "mjpeg" || f.Width != 1920));
+        if (chosen.Width != 1280 || chosen.Vcodec != "mjpeg") throw new Exception("720 MJPEG preference failed");
+        chosen = CameraDevices.ChooseFormat(formats.Where(f => f.PixelFormat != null));
+        if (chosen.Width != 1920 || chosen.PixelFormat != "yuyv422" || chosen.Fps != 30) throw new Exception("Raw preference failed");
+        chosen = CameraDevices.ChooseFormat([new(null, "nv12", 640, 480, 15), new("mjpeg", null, 1280, 720, 10)]);
+        if (chosen.Width != 1280 || chosen.Fps != 10) throw new Exception("Low FPS fallback failed");
+        if (CameraDevices.ParseFormats("pixel_format=yuyv422 min s=0x1080 fps=30 max s=999999999999x1080 fps=NaN").Count != 0)
+            throw new Exception("Invalid camera formats accepted");
+        bool rejected = false;
+        try { CameraDevices.ChooseFormat([]); } catch (InvalidOperationException) { rejected = true; }
+        if (!rejected || new[] { "Could not run graph", "I/O error", "Device or resource busy" }.Any(message => !CameraDevices.Error(message).Contains("占用"))) throw new Exception("Camera failure mapping failed");
+        if (new RecordingOptions().Mode != "desktop" || JsonSerializer.Deserialize<RecordingOptions>("{}")!.Mode != "desktop")
+            throw new Exception("Old settings must default to desktop");
+    }
+
     static void CheckLayoutFixtures(string tools, string root)
     {
         foreach (float scale in new[] { 1f, 1.25f, 1.5f, 2f })
         {
-            using var fixture = new MainForm(tools, automation: true, layoutOnly: true);
-            fixture.Show();
-            if (scale != 1) fixture.ScaleForLayoutTest(scale);
-            fixture.FitContent(); CheckLayout(fixture);
-            var toggle = (Button)fixture.Controls.Find("previewToggle", true).Single();
-            toggle.PerformClick(); CheckLayout(fixture);
-            toggle.PerformClick(); fixture.SetRecordingLayoutForTest(true); CheckLayout(fixture);
-            fixture.SetRecordingLayoutForTest(false);
-            using (var settings = fixture.CreateSettingsForm())
+            foreach (string mode in new[] { "desktop", "camera", "both" })
             {
-                settings.Show(fixture);
-                if (scale != 1) settings.ScaleForLayoutTest(scale);
-                settings.FitContent(); CheckLayout(settings);
-                if (settings.MinimizeBox || settings.MaximizeBox || settings.ShowInTaskbar ||
-                    Descendants(settings).Any(c => c.AccessibleName == "关闭设置"))
-                    throw new Exception("Settings must use only the native close button and stay out of the taskbar");
-                CheckScrollablePage(settings);
-                if (scale == 1) CaptureWindow(settings, Path.Combine(root, "settings-main.png"));
-                if (!GetWindowDisplayAffinity(settings.Handle, out uint affinity) || affinity != (fixture.StealthInCapture ? 0x11u : 0u))
-                    throw new Exception("Settings window capture affinity mismatch");
-                settings.ShowAdvanced(true); settings.FitContent(); CheckLayout(settings); CheckScrollablePage(settings);
-                if (Descendants(settings).OfType<Label>().Count(l => l.Visible && l.Text.StartsWith("版本 ")) != 1)
-                    throw new Exception("Advanced settings must show the version exactly once");
-                if (scale == 1) CaptureWindow(settings, Path.Combine(root, "settings-advanced.png"));
-                settings.ShowAdvanced(false); CheckLayout(settings);
-                settings.Close();
+                using var fixture = new MainForm(tools, automation: true, layoutOnly: true);
+                fixture.SetMode(mode, persist: false);
+                fixture.Show();
+                if (scale != 1) fixture.ScaleForLayoutTest(scale);
+                fixture.FitContent(); CheckLayout(fixture);
+                var toggle = (Button)fixture.Controls.Find("previewToggle", true).Single();
+                toggle.PerformClick(); CheckLayout(fixture);
+                toggle.PerformClick(); fixture.SetRecordingLayoutForTest(true); CheckLayout(fixture);
+                fixture.SetRecordingLayoutForTest(false);
+                using (var settings = fixture.CreateSettingsForm())
+                {
+                    settings.Show(fixture);
+                    if (scale != 1) settings.ScaleForLayoutTest(scale);
+                    settings.FitContent(); CheckLayout(settings);
+                    if (settings.MinimizeBox || settings.MaximizeBox || settings.ShowInTaskbar ||
+                        Descendants(settings).Any(c => c.AccessibleName == "关闭设置"))
+                        throw new Exception("Settings must use only the native close button and stay out of the taskbar");
+                    CheckScrollablePage(settings);
+                    if (scale == 1) CaptureWindow(settings, Path.Combine(root, mode == "desktop" ? "settings-main.png" : "settings-" + mode + "-main.png"));
+                    if (!GetWindowDisplayAffinity(settings.Handle, out uint affinity) || affinity != (fixture.StealthInCapture ? 0x11u : 0u))
+                        throw new Exception("Settings window capture affinity mismatch");
+                    settings.ShowAdvanced(true); settings.FitContent(); CheckLayout(settings); CheckScrollablePage(settings);
+                    if (Descendants(settings).OfType<Label>().Count(l => l.Visible && l.Text.StartsWith("版本 ")) != 1)
+                        throw new Exception("Advanced settings must show the version exactly once");
+                    if (scale == 1 && mode == "desktop") CaptureWindow(settings, Path.Combine(root, "settings-advanced.png"));
+                    settings.ShowAdvanced(false); CheckLayout(settings);
+                    settings.Close();
+                }
+                fixture.Close();
             }
-            fixture.Close();
         }
     }
     static void CheckScrollablePage(SettingsForm settings)
