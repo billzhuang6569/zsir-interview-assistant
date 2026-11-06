@@ -125,3 +125,7 @@
 ### v0.1.0 实施结果
 
 PermissionSetup 集中管理权限读取、串行请求与引导状态；PermissionSetupView 提供三步原生 sheet。CaptureModel 持久化录制方式并在创建素材前复查权限，既有 CaptureEngine 保留最终采集校验。录制设置可重新进入。未引入新依赖、未修改编码器和恢复格式。测试及尚未覆盖的真实环境见[验收记录](testing/macos-onboarding-2026-10-21.md)。本节前面的接口位置与验收矩阵是实施计划，不表示所有真机组合均已完成。
+
+## 下一版本：0.5.0 计划
+
+Windows 界面对齐、Windows 摄像头与全平台「在录屏里隐身」的原因分析和分 PR 计划见 [0.5.0 开发计划](milestones/0.5.0-windows-parity-camera-stealth.md)。
