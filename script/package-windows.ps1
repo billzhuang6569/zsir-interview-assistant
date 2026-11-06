@@ -52,7 +52,10 @@ foreach($framework in $frameworks){
     $files|Copy-Item -Destination $notice
 }
 Copy-Item (Join-Path $root 'LICENSE') (Join-Path $stage 'LICENSE.txt')
-Copy-Item (Join-Path $root 'clients\windows\INSTALL.md') (Join-Path $stage 'README.md')
+[IO.File]::WriteAllText((Join-Path $stage 'README.txt'), (Get-Content (Join-Path $root 'clients\windows\INSTALL.md') -Raw -Encoding UTF8), (New-Object Text.UTF8Encoding $true))
 Get-FileHash $ffmpeg,$ffprobe -Algorithm SHA256 | ForEach-Object { $_.Hash+'  tools/'+(Split-Path $_.Path -Leaf) } | Set-Content (Join-Path $stage 'TOOLS-SHA256SUMS.txt')
+foreach($entry in @((Get-Item -LiteralPath $stage)) + @(Get-ChildItem -LiteralPath $stage -Recurse -Force)){
+    if($entry.Name -match '[^\x00-\x7F]'){throw "Non-ASCII package entry: $($entry.FullName)"}
+}
 Compress-Archive -Path $stage -DestinationPath "$stage.zip"
 Get-FileHash "$stage.zip" -Algorithm SHA256

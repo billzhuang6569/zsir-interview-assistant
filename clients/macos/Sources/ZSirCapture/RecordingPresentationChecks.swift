@@ -5,6 +5,7 @@ import RecordingCore
 @MainActor
 enum RecordingPresentationChecks {
     static func run() {
+        checkCaptureVisibility()
         checkTimecode()
         checkDocking()
         let visible = NSRect(x: 0, y: 0, width: 1440, height: 900)
@@ -26,6 +27,29 @@ enum RecordingPresentationChecks {
         print("PASS: non-overlapping permission guide placement")
         print("PASS: timecode formatting, ready gate, idle timeout, interaction reset, reopen grace, failure and stop restoration")
     }
+    static func checkCaptureVisibility() {
+        _ = NSApplication.shared
+        let name = "com.zsir.stealth-checks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: name)!
+        defer { defaults.removePersistentDomain(forName: name) }
+        let setup = PermissionSetup(defaults: defaults)
+        let model = CaptureModel(permissions: setup)
+        precondition(model.stealthInCapture && model.captureSharingType == .none)
+        let window = CaptureWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        model.setStealthInCapture(false)
+        precondition(window.sharingType == .readOnly && model.captureSharingType == .readOnly)
+        precondition(!CaptureModel(permissions: setup).stealthInCapture)
+        model.busy = true
+        model.setStealthInCapture(true)
+        precondition(!model.stealthInCapture, "Busy must reject stealth changes")
+        model.busy = false
+        model.setStealthInCapture(true)
+        precondition(window.sharingType == .none && CaptureModel(permissions: setup).stealthInCapture)
+        print("PASS: stealth defaults, persistence, sharing type mapping, open window updates and busy guard")
+    }
+
     static func checkTimecode() {
         let model = CaptureModel()
         for (seconds, expected) in [(0.0, "00:00:00"), (59.9, "00:00:59"), (3601, "01:00:01"), (360_000, "100:00:00")] {

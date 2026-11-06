@@ -40,6 +40,9 @@ struct CaptureSettings: View {
             Text("一般不需要改动，默认值已按采访录制调好。").font(.caption).foregroundStyle(.secondary)
             HStack { VStack(alignment: .leading) { Text("保存位置"); Text(model.root.path).font(.caption).foregroundStyle(.secondary) }; Spacer(); Button("更改…") { model.chooseFolder() } }
             Divider()
+            Toggle("在录屏里隐身", isOn: Binding(get: { model.stealthInCapture }, set: { model.setStealthInCapture($0) })).tint(accent)
+            Text("开启：远程协助和会议共享尽量看不到小窗（部分 macOS 15+ 录屏软件可能仍可见）。关闭：远程协助可以看到小窗；本应用自己的录制始终不会录到小窗。").font(.caption).foregroundStyle(.secondary)
+            Divider()
             Toggle("意外中断后自动恢复", isOn: $model.autoRecovery).tint(accent)
             Text("下次打开时恢复已写入片段为副本，保留原文件；不会自动继续录制。").font(.caption).foregroundStyle(.secondary)
             Divider()

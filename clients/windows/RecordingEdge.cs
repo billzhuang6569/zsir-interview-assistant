@@ -25,7 +25,7 @@ internal sealed class RecordingEdge : Form, IMessageFilter
         StartPosition = FormStartPosition.Manual;
         ClientSize = new(32, 40); BackColor = Color.Fuchsia; TransparencyKey = Color.Fuchsia;
         DoubleBuffered = true; Cursor = Cursors.Hand;
-        HandleCreated += (_, _) => Excluded = SetWindowDisplayAffinity(Handle, 0x11);
+        HandleCreated += (_, _) => ApplyCaptureVisibility();
         MouseClick += (_, _) => Reveal(true);
         animation.Tick += (_, _) => { Place(); Invalidate(); };
         Application.AddMessageFilter(this);
@@ -33,6 +33,7 @@ internal sealed class RecordingEdge : Form, IMessageFilter
     }
     protected override bool ShowWithoutActivation => true;
     protected override CreateParams CreateParams { get { var p = base.CreateParams; p.ExStyle |= 0x08000000; return p; } }
+    internal void ApplyCaptureVisibility() => Excluded = CaptureVisibility.Apply(this, owner.StealthInCapture);
     public void ResetIdle() => lastInteraction = Now;
     public bool PreFilterMessage(ref Message message)
     {
@@ -49,7 +50,7 @@ internal sealed class RecordingEdge : Form, IMessageFilter
         if (!IsDocked && Now - lastInteraction >= 15 && owner.WindowState != FormWindowState.Minimized)
         {
             _ = Handle;
-            if (!Excluded) { ResetIdle(); return; }
+            if (owner.StealthInCapture && !Excluded) { ResetIdle(); return; }
             Place(); IsDocked = true; Show(); owner.Hide(); animation.Start();
         }
     }
@@ -86,5 +87,4 @@ internal sealed class RecordingEdge : Form, IMessageFilter
         base.Dispose(disposing);
     }
     [DllImport("user32.dll")] static extern bool SystemParametersInfo(uint action, uint param, [MarshalAs(UnmanagedType.Bool)] out bool value, uint flags);
-    [DllImport("user32.dll")] static extern bool SetWindowDisplayAffinity(IntPtr hwnd, uint affinity);
 }
