@@ -61,7 +61,7 @@
               <ListBox.ItemsPanel>
                 <ItemsPanelTemplate>
                   <!-- Rounded child widths must not grow the panel beyond its presenter slot. -->
-                  <UniformGrid Columns="2" HorizontalAlignment="Stretch" Margin="0" UseLayoutRounding="True" SnapsToDevicePixels="True" MaxWidth="{Binding ActualWidth, RelativeSource={RelativeSource AncestorType=ItemsPresenter}}"/>
+                  <UniformGrid Columns="2" HorizontalAlignment="Stretch" Margin="0" UseLayoutRounding="False" SnapsToDevicePixels="True"/>
                 </ItemsPanelTemplate>
               </ListBox.ItemsPanel>
               <ListBox.ItemContainerStyle>
