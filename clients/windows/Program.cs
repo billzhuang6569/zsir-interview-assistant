@@ -15,11 +15,19 @@ internal static class Program
             bool rejected = false;
             try { RecordingOptions.BitRate("high", 0, 1080); } catch (ArgumentOutOfRangeException) { rejected = true; }
             if (!rejected) throw new Exception("Invalid dimensions accepted");
+            SmokeTest.CheckCameraParsers();
             return;
         }
         using var mutex = new Mutex(true, "Local\\ZSirCapture.Windows", out bool first);
         if (!first) { MessageBox.Show("采访录制助手已经运行，请使用现有小窗。", "庄Sir采访录制助手"); return; }
         string tools = Path.Combine(AppContext.BaseDirectory, "tools");
+        if (args.Length == 2 && args[0] == "--device-check")
+        {
+            try { Task.Run(() => DeviceCheck.RunAsync(tools, args[1])).GetAwaiter().GetResult(); }
+            catch (Exception ex) { MessageBox.Show(ex.Message, "设备诊断未完成"); Environment.ExitCode = 1; }
+            return;
+        }
+        CameraDevices.SmokeTestEnabled = args.Length == 2 && args[0] == "--smoke-test";
         var form = new MainForm(tools, args.Length == 2 && args[0] == "--smoke-test");
         if (args.Length == 2 && args[0] == "--smoke-test")
         {

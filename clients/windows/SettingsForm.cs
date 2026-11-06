@@ -16,7 +16,19 @@ internal sealed class SettingsForm : Form
     readonly ComboBox audio = Theme.Combo("播放设备"), outputSize = Theme.Combo("输出尺寸"), quality = Theme.Combo("画质");
     readonly CheckBox stealth, captureAudio;
     readonly Button back, done, advanced;
-    readonly Theme.Card desktop = new(), advancedCard = new();
+    readonly Theme.Card desktop = new(), advancedCard = new(), cameraCard = new();
+    readonly ComboBox cameras = Theme.Combo("摄像头"), microphones = Theme.Combo("话筒");
+    readonly Theme.PreviewTile cameraPreview = new() { Caption = "摄像头 · 话筒" };
+    readonly ProgressBar micLevel = new() { Dock = DockStyle.Top, Maximum = 100, AccessibleName = "话筒音量" };
+    readonly Label cameraState = Theme.Label("", true);
+    readonly System.Windows.Forms.Timer previewTimer = new() { Interval = 100 };
+    readonly SemaphoreSlim previewGate = new(1, 1);
+    IdlePreview? idleCamera;
+    Loopback? mic;
+    string? micFile;
+    bool closing;
+    FormWindowState previousWindowState;
+    int pendingFrame;
     bool recovering, fitting, loading;
     float layoutScale = 1;
     internal bool IsAdvanced { get; private set; }
@@ -37,6 +49,26 @@ internal sealed class SettingsForm : Form
         heading.Dock = DockStyle.Fill;
         var header = Theme.Row(1, back, heading);
         header.Margin = new Padding(0, 0, 0, 12); Theme.Add(content, header);
+        Theme.Add(cameraCard, Theme.Label("摄像头画面"));
+        Theme.Add(cameraCard, cameras); Theme.Add(cameraCard, Theme.Label("话筒"));
+        Theme.Add(cameraCard, microphones); Theme.Add(cameraCard, micLevel);
+        Theme.Add(cameraCard, cameraPreview); Theme.Add(cameraCard, cameraState); Theme.Add(mainPage, cameraCard);
+        cameraCard.Visible = options.IncludesCamera; desktop.Visible = options.IncludesDesktop;
+        cameras.SelectedIndexChanged += async (_, _) =>
+        {
+            if (loading || cameras.SelectedItem is not CameraDevice device) return;
+            Change(() => options.CameraId = device.Id); await RestartCameraPreviewAsync();
+        };
+        microphones.SelectedIndexChanged += async (_, _) =>
+        {
+            if (loading || microphones.SelectedItem is not AudioDevice device) return;
+            Change(() => options.MicrophoneId = device.Id); await RestartCameraPreviewAsync();
+        };
+        var privacyCamera = Theme.Button("摄像头隐私设置");
+        var privacyMic = Theme.Button("麦克风隐私设置");
+        privacyCamera.Click += (_, _) => OpenPrivacy("webcam"); privacyMic.Click += (_, _) => OpenPrivacy("microphone");
+        Theme.Add(cameraCard, Theme.Row(0, privacyCamera, privacyMic));
+        previewTimer.Tick += (_, _) => micLevel.Value = Math.Clamp((int)((mic?.Peak ?? 0) * 100), 0, 100);
         var cardTitle = Theme.Label("桌面画面"); cardTitle.Font = Theme.Font(12, FontStyle.Bold);
         Theme.Add(desktop, cardTitle); Theme.Add(desktop, displays);
         captureAudio = Theme.Toggle("同时录下电脑里播放的声音", options.SystemAudio);
@@ -68,7 +100,7 @@ internal sealed class SettingsForm : Form
         Theme.Add(advancedCard, stealth);
         Theme.Add(advancedCard, Theme.Label("开启：录制画面、远程协助和会议共享都看不到小窗。关闭：远程协助可以看到并操作小窗，但小窗也会被录进桌面画面。", true));
         var detect = Theme.Button("检测");
-        detect.Click += (_, _) => { if (owner.CanChangeStealth) { owner.DetectDevices(); ReloadDevices(); } };
+        detect.Click += async (_, _) => { if (owner.CanChangeStealth) { owner.DetectDevices(); ReloadDevices(); await ReloadCamerasAsync(); } };
         Theme.Add(advancedCard, Theme.Row(0, Theme.Label("重新检测设备"), detect));
         Theme.Add(advancedCard, Theme.Label("插拔设备后自动更新，检测不会替换失联的录制目标。", true));
         Theme.Add(advancedCard, Theme.Label("异常中断恢复"));
@@ -91,9 +123,23 @@ internal sealed class SettingsForm : Form
         DpiChanged += (_, _) => { if (IsHandleCreated) BeginInvoke((Action)FitContent); };
         content.DpiChangedAfterParent += (_, _) => FitContent();
         FontChanged += (_, _) => { if (IsHandleCreated) FitContent(); };
-        Shown += (_, _) => { FitWindow(); FitContent(); };
-        FormClosing += (_, e) => { if (recovering) e.Cancel = true; };
-        FormClosed += (_, _) => tips.Dispose();
+        Shown += async (_, _) => { FitWindow(); FitContent(); await ReloadCamerasAsync(); };
+        Resize += async (_, _) =>
+        {
+            if (WindowState != previousWindowState) { previousWindowState = WindowState; await RestartCameraPreviewAsync(); }
+        };
+        FormClosing += async (_, e) =>
+        {
+            if (recovering) { e.Cancel = true; return; }
+            if (closing) return;
+            closing = true;
+            if (owner.LayoutOnly) return;
+            e.Cancel = true; content.Enabled = false;
+            await Task.Yield();
+            try { await RestartCameraPreviewAsync(); Close(); }
+            catch (Exception ex) { closing = false; content.Enabled = true; cameraState.Text = "设备尚未释放：" + ex.Message; }
+        };
+        FormClosed += (_, _) => { previewTimer.Dispose(); cameraPreview.Image?.Dispose(); tips.Dispose(); };
         UpdatePaths(); ReloadDevices(); SyncStealth();
         ResumeLayout(false);
     }
@@ -120,13 +166,13 @@ internal sealed class SettingsForm : Form
         IsAdvanced = value; mainPage.Visible = !value; advancedPage.Visible = value;
         back.Visible = value; advanced.Visible = !value;
         heading.Text = value ? "高级设置" : "录制设置"; done.Text = value ? "返回" : "完成";
-        scroll.AutoScrollPosition = Point.Empty; UpdatePaths(); FitContent();
+        scroll.AutoScrollPosition = Point.Empty; UpdatePaths(); FitContent(); _ = RestartCameraPreviewAsync();
     }
     internal void SyncStealth()
     {
         stealth.Checked = owner.StealthInCapture;
         stealth.Enabled = owner.CanChangeStealth;
-        desktop.Enabled = advancedCard.Enabled = owner.CanChangeStealth;
+        cameraCard.Enabled = desktop.Enabled = advancedCard.Enabled = owner.CanChangeStealth;
     }
     internal void SetRecovering(bool value)
     {
@@ -186,7 +232,8 @@ internal sealed class SettingsForm : Form
             content.PerformLayout();
             int width = Math.Max(1, content.Width - content.Padding.Horizontal);
             mainPage.Width = advancedPage.Width = width;
-            desktop.Width = advancedCard.Width = width;
+            cameraCard.Width = desktop.Width = advancedCard.Width = width;
+            cameraPreview.Height = U(148); micLevel.Height = U(12);
             int inside = Math.Max(1, width - desktop.Padding.Horizontal);
             displays.MaximumSize = new(inside, 0);
             displays.Width = inside;
@@ -195,7 +242,7 @@ internal sealed class SettingsForm : Form
                 tile.Width = Math.Max(1, Math.Min(U(280), inside - tile.Margin.Horizontal));
                 tile.Height = U(132) + tile.CaptionLineHeight * tile.CaptionLines.Length + U(20);
             }
-            foreach (Control page in new Control[] { content, mainPage, advancedPage, desktop, advancedCard }) Theme.WrapLabels(page);
+            foreach (Control page in new Control[] { content, mainPage, advancedPage, cameraCard, desktop, advancedCard }) Theme.WrapLabels(page);
             content.PerformLayout();
             content.Height = content.GetPreferredSize(new Size(content.Width, 0)).Height;
         }
@@ -206,11 +253,106 @@ internal sealed class SettingsForm : Form
         layoutScale = factor; Theme.ScaleLayoutFixture(this, factor);
         FitWindow(); FitContent();
     }
+    static void OpenPrivacy(string capability) => System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:privacy-" + capability) { UseShellExecute = true });
+    internal async Task ReloadCamerasAsync()
+    {
+        if (owner.LayoutOnly)
+        {
+            loading = true;
+            cameras.Items.Clear(); cameras.Items.Add(new CameraDevice("fixture", "测试摄像头 · 中文名称与重复设备")); cameras.SelectedIndex = 0;
+            microphones.Items.Clear(); microphones.Items.Add(new AudioDevice("fixture", "测试话筒")); microphones.SelectedIndex = 0;
+            loading = false; FitContent(); return;
+        }
+        try
+        {
+            await owner.ReleaseIdleForSettingsAsync();
+            await previewGate.WaitAsync();
+            try { await StopCameraPreviewAsync(); } finally { previewGate.Release(); }
+            var devices = await CameraDevices.DiscoverAsync(owner.Tools);
+            if (closing || IsDisposed) return;
+            loading = true;
+            try
+            {
+                cameras.Items.Clear(); cameras.Items.Add(new CameraDevice("", "第一台可用摄像头"));
+                foreach (var device in devices) cameras.Items.Add(device);
+                cameras.SelectedItem = cameras.Items.Cast<CameraDevice>().FirstOrDefault(d => d.Id == options.CameraId);
+                if (cameras.SelectedIndex < 0)
+                {
+                    var missing = new CameraDevice(options.CameraId, "原摄像头已断开，请重新选择"); cameras.Items.Add(missing); cameras.SelectedItem = missing;
+                }
+                microphones.Items.Clear();
+                foreach (var device in CoreAudio.Devices(1)) microphones.Items.Add(device);
+                microphones.SelectedItem = microphones.Items.Cast<AudioDevice>().FirstOrDefault(d => d.Id == options.MicrophoneId);
+                if (microphones.SelectedIndex < 0)
+                {
+                    var missing = new AudioDevice(options.MicrophoneId, "原话筒已断开，请重新选择"); microphones.Items.Add(missing); microphones.SelectedItem = missing;
+                }
+                cameraState.Text = devices.Count == 0 ? CameraDevices.NoCamera : "预览仅在此页打开时采集";
+            }
+            finally { loading = false; }
+            await RestartCameraPreviewAsync(); FitContent();
+        }
+        catch (Exception ex) { if (!IsDisposed) cameraState.Text = ex.Message; }
+    }
+    async Task StopCameraPreviewAsync()
+    {
+        previewTimer.Stop();
+        await Task.WhenAll(idleCamera?.StopAsync() ?? Task.CompletedTask, mic?.StopAsync() ?? Task.CompletedTask);
+        idleCamera?.Dispose(); idleCamera = null;
+        if (mic?.IsActive == true) throw new IOException("话筒仍在释放中");
+        mic = null;
+        if (micFile != null) { File.Delete(micFile); micFile = null; }
+    }
+    async Task RestartCameraPreviewAsync()
+    {
+        await previewGate.WaitAsync();
+        try
+        {
+            await StopCameraPreviewAsync();
+            if (owner.LayoutOnly || closing || IsDisposed || !Visible || IsAdvanced || !options.IncludesCamera || WindowState == FormWindowState.Minimized || !owner.CanChangeStealth) return;
+            await owner.ReleaseIdleForSettingsAsync();
+            string cameraId = options.CameraId, microphoneId = options.MicrophoneId;
+            var device = await CameraDevices.ResolveAsync(owner.Tools, cameraId);
+            if (!CameraDevices.Fake) { CapturePrivacy.Check("webcam"); CapturePrivacy.Check("microphone"); }
+            var format = CameraDevices.ChooseFormat(await CameraDevices.FormatsAsync(owner.Tools, device));
+            if (closing || IsDisposed || IsAdvanced || WindowState == FormWindowState.Minimized || options.CameraId != cameraId || options.MicrophoneId != microphoneId) return;
+            idleCamera = new IdlePreview(owner.Tools, Rectangle.Empty, bytes =>
+            {
+                if (closing || IsDisposed || Interlocked.Exchange(ref pendingFrame, 1) != 0) return;
+                try
+                {
+                    BeginInvoke((Action)(() =>
+                    {
+                        try
+                        {
+                            if (closing || IsDisposed || IsAdvanced) return;
+                            using var input = new MemoryStream(bytes); using var image = Image.FromStream(input);
+                            var old = cameraPreview.Image; cameraPreview.Image = new Bitmap(image); old?.Dispose();
+                        }
+                        catch (ArgumentException) { }
+                        finally { Interlocked.Exchange(ref pendingFrame, 0); }
+                    }));
+                }
+                catch (InvalidOperationException) { Interlocked.Exchange(ref pendingFrame, 0); }
+            }, device, format);
+            micFile = Path.Combine(Path.GetTempPath(), "zsir-mic-preview-" + Guid.NewGuid().ToString("N") + ".wav");
+            mic = new Loopback();
+            await mic.StartAsync(micFile, microphoneId, microphone: true, synthetic: CameraDevices.Fake).WaitAsync(TimeSpan.FromSeconds(10));
+            previewTimer.Start();
+        }
+        catch (Exception ex)
+        {
+            if (!IsDisposed) cameraState.Text = ex.Message;
+            if (closing) throw;
+        }
+        finally { previewGate.Release(); }
+    }
+
     protected override void WndProc(ref Message message)
     {
         base.WndProc(ref message);
         if ((message.Msg == 0x219 || message.Msg == 0x7E) && !recovering && IsHandleCreated)
-            BeginInvoke((Action)(() => { if (!IsDisposed && owner.CanChangeStealth) { owner.DetectDevices(); ReloadDevices(); } }));
+            BeginInvoke((Action)(() => { if (!IsDisposed && owner.CanChangeStealth) { owner.DetectDevices(); ReloadDevices(); _ = ReloadCamerasAsync(); } }));
     }
 
     sealed class DisplayTile : Button

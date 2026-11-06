@@ -26,6 +26,16 @@ internal sealed class MainForm : Form
     internal static string FormatTimecode(double elapsed) { long seconds = (long)Math.Max(0, elapsed); return $"{seconds / 3600:00}:{seconds / 60 % 60:00}:{seconds % 60:00}"; }
     readonly TableLayoutPanel layout = Theme.Column();
     readonly Theme.PreviewTile preview = new() { Dock = DockStyle.Top };
+    readonly Theme.PreviewTile cameraPreview = new() { Dock = DockStyle.Fill, Caption = "摄像头 · 话筒" };
+    readonly TableLayoutPanel previewRow = new() { Dock = DockStyle.Top, ColumnCount = 3, RowCount = 1, Margin = new Padding(0, 4, 0, 12) };
+    readonly List<Theme.SegmentButton> modeButtons = [];
+    IdlePreview? idleCamera;
+    string idleCameraId = "";
+    int pendingCameraPreview;
+    internal string Tools => tools;
+    internal bool LayoutOnly => layoutOnly;
+    internal RecordingOptions Options => options;
+    internal Task ReleaseIdleForSettingsAsync() => StopIdlePreviewAsync();
     AudioDevice? selectedAudio;
     bool fitting, hasTimecode;
     float layoutScale = 1;
@@ -41,7 +51,7 @@ internal sealed class MainForm : Form
     readonly SemaphoreSlim idlePreviewGate = new(1, 1);
     IdlePreview? idlePreview;
     int idlePreviewGeneration;
-    DateTime nextIdlePreviewAttempt;
+    DateTime nextIdlePreviewAttempt, nextDesktopPreviewAttempt;
     public bool IsRecording => recording;
     public bool IsBusy => busy;
     internal bool StealthInCapture => options.StealthInCapture;
@@ -88,22 +98,29 @@ internal sealed class MainForm : Form
         timeRow = Theme.Row(1, clock, clockHint); timeRow.Visible = false;
         var modes = new TableLayoutPanel { AutoSize = true, Dock = DockStyle.Top, ColumnCount = 3, RowCount = 1,
             BackColor = Theme.Panel, Margin = new Padding(0, 10, 0, 8) };
-        tips.SetToolTip(modes, "摄像头录制将在后续版本提供");
+        string[] modeIds = ["camera", "desktop", "both"];
         string[] modeNames = ["摄像头", "桌面", "摄像头+桌面"];
         for (int i = 0; i < modeNames.Length; i++)
         {
             modes.ColumnStyles.Add(new(SizeType.Percent, 100f / 3));
-            var mode = new Theme.SegmentButton(modeNames[i], i == 1) { Dock = DockStyle.Fill };
+            var mode = new Theme.SegmentButton(modeNames[i], options.Mode == modeIds[i]) { Dock = DockStyle.Fill };
             mode.Padding = new Padding(0, 6, 0, 6); mode.Margin = Padding.Empty;
-            mode.AccessibleName = modeNames[i] + (i == 1 ? "，已选择" : "，后续版本提供");
-            if (i != 1) tips.SetToolTip(mode, "摄像头录制将在后续版本提供");
+            mode.AccessibleName = modeNames[i];
+            string selectedMode = modeIds[i];
+            mode.Click += (_, _) => SetMode(selectedMode);
+            modeButtons.Add(mode);
             modes.Controls.Add(mode, i, 0);
         }
         fold.Name = "previewToggle";
         fold.Click += (_, _) => TogglePreview();
         previewState.Font = Theme.Font(8); previewState.Anchor = AnchorStyles.Right;
         var disclosure = Theme.Row(0, fold, previewState); fold.Anchor = AnchorStyles.Left;
-        preview.Margin = new Padding(0, 4, 0, 12);
+        previewRow.ColumnStyles.Add(new(SizeType.Percent, 50));
+        previewRow.ColumnStyles.Add(new(SizeType.Absolute, 0));
+        previewRow.ColumnStyles.Add(new(SizeType.Percent, 50));
+        previewRow.Controls.Add(cameraPreview, 0, 0); previewRow.Controls.Add(preview, 2, 0);
+        preview.Dock = DockStyle.Fill;
+        cameraPreview.Margin = preview.Margin = Padding.Empty;
         settingsButton = Theme.IconButton("\uE713", "录制设置", tips);
         settingsButton.Click += (_, _) => ShowRecordingSettings();
         var open = Theme.IconButton("\uE8B7", "打开素材目录", tips);
@@ -114,12 +131,12 @@ internal sealed class MainForm : Form
         open.Margin = settingsButton.Margin = new Padding(6, 4, 0, 4);
         var buttons = Theme.Row(0, action, open, settingsButton);
         Theme.Add(layout, title); Theme.Add(layout, status); Theme.Add(layout, detail); Theme.Add(layout, timeRow);
-        Theme.Add(layout, modes); Theme.Add(layout, disclosure); Theme.Add(layout, preview); Theme.Add(layout, buttons);
+        Theme.Add(layout, modes); Theme.Add(layout, disclosure); Theme.Add(layout, previewRow); Theme.Add(layout, buttons);
         Controls.Add(layout);
         void CustomSizes()
         {
             mark.Size = new(U(26), U(26)); close.Size = new(U(28), U(28));
-            open.Size = settingsButton.Size = new(U(38), U(38)); preview.Height = U(148);
+            open.Size = settingsButton.Size = new(U(38), U(38)); previewRow.Height = U(148); cameraPreview.Height = preview.Height = U(148);
             detail.MaximumSize = new(Math.Max(1, U(304)), detail.Font.Height * 2 + U(2)); detail.AutoEllipsis = true;
             clockHint.MaximumSize = new(U(134), 0);
             action.MinimumSize = new(0, U(38));
@@ -140,8 +157,8 @@ internal sealed class MainForm : Form
             if (!recording || recorder == null) return;
             recorder.PreviewEnabled = previewVisible && Visible && WindowState != FormWindowState.Minimized && !edge.IsDocked;
             clock.Text = FormatTimecode(recorder.Seconds);
-            detail.Text = !options.SystemAudio ? "正在写入本机 · 系统声音已关闭" : recorder.Peak > .001 ? "正在写入本机 · ● 收到系统声音" : "正在写入本机 · ○ 系统声音静音";
-            previewState.Text = preview.Image == null ? "等待预览" : "实时画面";
+            detail.Text = options.IncludesCamera ? (recorder.Peak > .001 ? "正在写入本机 · ● 收到话筒声音" : "正在写入本机 · ○ 话筒静音") : !options.SystemAudio ? "正在写入本机 · 系统声音已关闭" : recorder.Peak > .001 ? "正在写入本机 · ● 收到系统声音" : "正在写入本机 · ○ 系统声音静音";
+            previewState.Text = (options.IncludesCamera ? cameraPreview.Image : preview.Image) == null ? "等待预览" : "实时画面";
             FitContent();
             try { recorder.CheckHealth(); }
             catch (Exception ex) { await StopRecordingAsync(ex.Message); }
@@ -160,7 +177,7 @@ internal sealed class MainForm : Form
         {
             if (busy) { e.Cancel = true; if (!Automation) MessageBox.Show(this, "请先停止录制并等待保存完成，再关闭窗口。", "正在处理素材"); }
         };
-        FormClosed += (_, _) => { tray.Dispose(); timer.Dispose(); idlePreview?.Dispose(); idlePreview = null; edge.Dispose(); preview.Image?.Dispose(); };
+        FormClosed += (_, _) => { tray.Dispose(); timer.Dispose(); idlePreview?.Dispose(); idlePreview = null; idleCamera?.Dispose(); idleCamera = null; cameraPreview.Image?.Dispose(); edge.Dispose(); preview.Image?.Dispose(); };
         try { if (File.Exists(preference)) { string saved = File.ReadAllText(preference).Trim(); if (Path.IsPathFullyQualified(saved)) root = saved; } RefreshDevices(); }
         catch (Exception ex) { ShowError(ex); }
         ResumeLayout(false);
@@ -225,12 +242,10 @@ internal sealed class MainForm : Form
     }
     async Task StopIdlePreviewCoreAsync()
     {
-        var current = idlePreview;
-        if (current == null) return;
-        idlePreviewGeneration++;
-        idlePreview = null;
-        try { await current.StopAsync(); }
-        finally { current.Dispose(); }
+        var camera = idleCamera; var current = idlePreview;
+        idleCamera = null; idlePreview = null; idlePreviewGeneration++;
+        try { await Task.WhenAll(camera?.StopAsync() ?? Task.CompletedTask, current?.StopAsync() ?? Task.CompletedTask); }
+        finally { camera?.Dispose(); current?.Dispose(); }
     }
     async Task UpdateIdlePreviewAsync()
     {
@@ -240,11 +255,25 @@ internal sealed class MainForm : Form
         try
         {
             var screen = Screen.AllScreens.FirstOrDefault(x => x.DeviceName == options.ScreenId);
-            bool wanted = !IsDisposed && !Disposing && !busy && recorder?.CleanupPending != true && Visible && previewVisible && WindowState != FormWindowState.Minimized && !edge.IsDocked && screen != null;
+            bool cameraWanted = !IsDisposed && !Disposing && !busy && settingsDialog == null && recorder?.CleanupPending != true && Visible && previewVisible && WindowState != FormWindowState.Minimized && !edge.IsDocked && options.IncludesCamera;
+            if (idleCamera != null && (!cameraWanted || idleCameraId != options.CameraId || idleCamera.HasExited))
+            { var old = idleCamera; idleCamera = null; try { await old.StopAsync(); } finally { old.Dispose(); } }
+            bool wanted = options.IncludesDesktop && settingsDialog == null && !IsDisposed && !Disposing && !busy && recorder?.CleanupPending != true && Visible && previewVisible && WindowState != FormWindowState.Minimized && !edge.IsDocked && screen != null;
             if (idlePreview != null && (!wanted || idlePreview.Bounds != screen!.Bounds || idlePreview.HasExited))
                 await StopIdlePreviewCoreAsync();
-            if (!wanted || IsDisposed || Disposing || busy || !Visible || !previewVisible || WindowState == FormWindowState.Minimized || idlePreview != null || DateTime.UtcNow < nextIdlePreviewAttempt) return;
-            nextIdlePreviewAttempt = DateTime.UtcNow.AddSeconds(5);
+            if (cameraWanted && idleCamera == null && DateTime.UtcNow >= nextIdlePreviewAttempt)
+            {
+                nextIdlePreviewAttempt = DateTime.UtcNow.AddSeconds(5);
+                string cameraId = options.CameraId;
+                var device = await CameraDevices.ResolveAsync(tools, cameraId);
+                if (!CameraDevices.Fake) CapturePrivacy.Check("webcam");
+                var format = CameraDevices.ChooseFormat(await CameraDevices.FormatsAsync(tools, device));
+                if (busy || IsDisposed || settingsDialog != null || !Visible || !previewVisible || edge.IsDocked || WindowState == FormWindowState.Minimized || !options.IncludesCamera || options.CameraId != cameraId) return;
+                idleCameraId = cameraId;
+                idleCamera = new IdlePreview(tools, Rectangle.Empty, bytes => ReceiveCameraPreview(bytes), device, format);
+            }
+            if (!wanted || IsDisposed || Disposing || busy || !Visible || !previewVisible || WindowState == FormWindowState.Minimized || idlePreview != null || DateTime.UtcNow < nextDesktopPreviewAttempt) return;
+            nextDesktopPreviewAttempt = DateTime.UtcNow.AddSeconds(5);
             int generation = ++idlePreviewGeneration;
             idlePreview = new IdlePreview(tools, screen!.Bounds, bytes =>
             {
@@ -272,10 +301,45 @@ internal sealed class MainForm : Form
         finally { idlePreviewGate.Release(); }
     }
 
+    internal void SetMode(string mode, bool persist = true)
+    {
+        if (!CanChangeStealth || mode is not ("camera" or "desktop" or "both")) return;
+        string previous = options.Mode; options.Mode = mode;
+        try { if (persist) options.Save(); }
+        catch (Exception ex) { options.Mode = previous; ShowError(ex); return; }
+        for (int i = 0; i < modeButtons.Count; i++)
+        {
+            var button = modeButtons[i]; button.Selected = mode == new[] { "camera", "desktop", "both" }[i];
+            button.AccessibleDescription = button.Selected ? "已选择" : "未选择"; button.Invalidate();
+        }
+        var old = cameraPreview.Image; cameraPreview.Image = null; old?.Dispose();
+        detail.Text = (mode == "camera" ? "摄像头 + 话筒" : mode == "both" ? "摄像头 + 桌面" : "桌面 + 系统声音") + " · 仅保存在本机";
+        FitContent(); _ = UpdateIdlePreviewAsync();
+    }
+    void ReceiveCameraPreview(byte[] bytes)
+    {
+        if (IsDisposed || Interlocked.Exchange(ref pendingCameraPreview, 1) != 0) return;
+        try
+        {
+            BeginInvoke((Action)(() =>
+            {
+                try
+                {
+                    if (IsDisposed || !previewVisible || !Visible || edge.IsDocked || WindowState == FormWindowState.Minimized || !options.IncludesCamera) return;
+                    using var input = new MemoryStream(bytes); using var image = Image.FromStream(input);
+                    var old = cameraPreview.Image; cameraPreview.Image = new Bitmap(image); old?.Dispose();
+                }
+                catch (ArgumentException) { }
+                finally { Interlocked.Exchange(ref pendingCameraPreview, 0); }
+            }));
+        }
+        catch (InvalidOperationException) { Interlocked.Exchange(ref pendingCameraPreview, 0); }
+    }
+
     void TogglePreview()
     {
         previewVisible = !previewVisible;
-        preview.Visible = previewVisible;
+        previewRow.Visible = previewVisible;
         fold.Text = previewVisible ? "收起预览" : "展开预览";
         fold.Expanded = previewVisible; fold.Invalidate();
         if (recorder != null) recorder.PreviewEnabled = previewVisible;
@@ -311,6 +375,12 @@ internal sealed class MainForm : Form
             timeRow.Visible = hasTimecode;
             clockHint.Text = recording ? "15 秒无操作后收起" : "本次录制时长";
             dot.ForeColor = recording ? Theme.Accent : busy || LastError != null || state.Text == "素材需要检查" ? Theme.Orange : Theme.Mint;
+            previewRow.Visible = previewVisible;
+            cameraPreview.Visible = options.IncludesCamera; preview.Visible = options.IncludesDesktop;
+            previewRow.ColumnStyles[0].Width = options.Mode == "both" ? 50 : options.IncludesCamera ? 100 : 0;
+            previewRow.ColumnStyles[1].Width = options.Mode == "both" ? U(8) : 0;
+            previewRow.ColumnStyles[2].Width = 100 - previewRow.ColumnStyles[0].Width;
+            cameraPreview.Invalidate();
             preview.Caption = options.SystemAudio ? "桌面 · 系统声音" : "桌面 · 无声音";
             preview.Invalidate();
             layout.PerformLayout();
@@ -362,13 +432,19 @@ internal sealed class MainForm : Form
             if (StealthInCapture && !excluded) throw new InvalidOperationException("小窗排除设置未成功，取消录制");
             RefreshDevices();
             string id = options.ScreenId;
-            Screen screen = id.Length == 0 ? Screen.PrimaryScreen! : Screen.AllScreens.FirstOrDefault(x => x.DeviceName == id) ?? throw new InvalidOperationException("所选显示器已断开");
+            Screen screen = !options.IncludesDesktop || id.Length == 0 ? Screen.PrimaryScreen! : Screen.AllScreens.FirstOrDefault(x => x.DeviceName == id) ?? throw new InvalidOperationException("所选显示器已断开");
             var audioDevice = selectedAudio;
-            if (options.SystemAudio && audioDevice == null) throw new InvalidOperationException("请选择系统声音输出设备");
+            if (options.IncludesDesktop && options.SystemAudio && audioDevice == null) throw new InvalidOperationException("请选择系统声音输出设备");
             SetThreadExecutionState(0x80000001);
             var current = new Recorder(tools) { PreviewEnabled = previewVisible };
             recorder = current;
+            current.CameraPreview = ReceiveCameraPreview;
             current.Preview = bytes =>
+            {
+                if (!options.IncludesDesktop) { ReceiveCameraPreview(bytes); return; }
+                ReceiveDesktopPreview(bytes);
+            };
+            void ReceiveDesktopPreview(byte[] bytes)
             {
                 if (IsDisposed || Interlocked.Exchange(ref pendingPreview, 1) != 0) return;
                 try
@@ -387,9 +463,10 @@ internal sealed class MainForm : Form
                     }));
                 }
                 catch (InvalidOperationException) { Interlocked.Exchange(ref pendingPreview, 0); }
-            };
+            }
+            var previousCamera = cameraPreview.Image; cameraPreview.Image = null; previousCamera?.Dispose();
             var previous = preview.Image; preview.Image = null; previous?.Dispose();
-            await current.StartAsync(root, screen.Bounds, audioDevice?.Id ?? "", options.Quality, options.SystemAudio, options.OutputProfile, StealthInCapture);
+            await current.StartAsync(root, screen.Bounds, audioDevice?.Id ?? "", options.Quality, options.SystemAudio, options.OutputProfile, StealthInCapture, options.Mode, options.CameraId, options.MicrophoneId);
             lastFolder = current.Folder; recording = true; hasTimecode = true; edge.ResetIdle();
             state.Text = "正在录制";
             action.Text = "停止并保存"; action.AccessibleName = action.Text; action.Enabled = true; previewState.Text = "等待预览"; FitContent();
@@ -410,7 +487,7 @@ internal sealed class MainForm : Form
         {
             await current.StopAsync(reason);
             state.Text = current.Failure == null ? "录制已保存" : "素材需要检查";
-            detail.Text = current.Failure ?? "desktop.mp4 · 请检查音画后交付";
+            detail.Text = current.Failure ?? (options.Mode == "camera" ? "camera.mp4" : options.Mode == "both" ? "camera.mp4 + desktop.mp4" : "desktop.mp4") + " · 请检查音画后交付";
             if (current.Failure != null) LastError = new InvalidOperationException(current.Failure);
         }
         catch (Exception ex) { state.Text = "素材需要检查"; ShowError(ex); }
@@ -426,6 +503,7 @@ internal sealed class MainForm : Form
     {
         enabled &= recorder?.CleanupPending != true;
         settingsButton.Enabled = enabled;
+        foreach (var button in modeButtons) button.Enabled = enabled;
         action.Enabled = enabled && (!StealthInCapture || excluded);
         settingsDialog?.SyncStealth();
     }
@@ -461,7 +539,17 @@ internal sealed class MainForm : Form
         try { string path = lastFolder ?? root; Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
         catch (Exception ex) { ShowError(ex); }
     }
-    void ShowError(Exception ex) { edge.Reveal(false); LastError = ex; detail.Text = ex.Message; FitContent(); if (!Automation) MessageBox.Show(this, ex.Message, "录制提示", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+    void ShowError(Exception ex)
+    {
+        edge.Reveal(false); LastError = ex; detail.Text = ex.Message; FitContent();
+        if (Automation) return;
+        if (ex.Message.Contains("Windows 隐私设置禁止"))
+        {
+            if (MessageBox.Show(this, ex.Message + "。打开 Windows 隐私设置？", "录制提示", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+                Process.Start(new ProcessStartInfo("ms-settings:privacy-" + (ex.Message.Contains("摄像头") ? "webcam" : "microphone")) { UseShellExecute = true });
+        }
+        else MessageBox.Show(this, ex.Message, "录制提示", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    }
     protected override void WndProc(ref Message message)
     {
         if ((message.Msg == 0x218 && message.WParam.ToInt32() == 4 || message.Msg == 0x7E) && recording)

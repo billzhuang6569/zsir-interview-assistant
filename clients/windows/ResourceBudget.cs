@@ -5,6 +5,7 @@ namespace ZSirCapture;
 internal static class ResourceBudget
 {
     // System commit includes page-file backing; physical free RAM alone is not an allocation budget.
+    internal const long CameraInputBuffer = 512L * 1024 * 1024;
     internal const long SafetyFloor = 512L * 1024 * 1024;
     // Admission heuristic: three full BGRA input packets plus capture/filter surfaces,
     // and 10 lookahead frames + per-worker working surfaces at output resolution.

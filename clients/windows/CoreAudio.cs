@@ -23,13 +23,13 @@ internal static class CoreAudio
         }
         finally { Release(store); }
     }
-    public static List<AudioDevice> Devices()
+    public static List<AudioDevice> Devices(int flow = 0)
     {
-        var result = new List<AudioDevice> { new("", "系统当前默认输出") };
+        var result = new List<AudioDevice> { new("", flow == 1 ? "系统默认麦克风" : "系统当前默认输出") };
         var enumerator = Enumerator();
         try
         {
-            Check(enumerator.EnumAudioEndpoints(0, 1, out var collection));
+            Check(enumerator.EnumAudioEndpoints(flow, 1, out var collection));
             try
             {
                 Check(collection.GetCount(out var count));
