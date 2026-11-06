@@ -74,6 +74,7 @@ public partial class EdgeWindow : Window
         main.Top = Math.Clamp(main.Top, a.Y, Math.Max(a.Y, b.Y - main.ActualHeight));
         main.Show(); if (activate) main.Activate();
     }
+    internal IDisposable ScaleForLayoutTest(double factor) => SmokeTest.ScaleForLayoutTest(this, factor);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] static extern IntPtr GetWindowLongPtr(IntPtr window, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr(IntPtr window, int index, IntPtr value);
 }

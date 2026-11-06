@@ -41,7 +41,7 @@ FFmpeg不提交二进制到仓库、不在应用启动时下载。`script/build-
 
 `Theme.xaml` 统一视觉稿中的暗色令牌与控件模板；`MainWindow`、`SettingsWindow` 和 `EdgeWindow` 分别承载主窗、设置两页和边缘提示。`MainViewModel` 保存可绑定状态，`RecordingController` 管理录制、预览释放、健康检查和恢复；录制引擎保持原样。主窗宽 336 DIP，双路预览 16:10、单路 16:9，支持系统减少动画。Win11 22621+ 使用 Mica 与圆角，较早系统回退到深色实底。通过 manifest 启用 PerMonitorV2；WinForms 仅保留托盘、文件夹选择和屏幕枚举互操作；`CaptureVisibility` 改接 HWND，`GlobalUsings.cs` 为原引擎保留 `Screen` / `Rectangle` 类型别名。
 
-`--smoke-test` 保留原有 desktop / camera / both / noCamera 录制阶段、媒体、解析器、资源租约、恢复和隐身检查。WPF 在 `UpdateLayout` 后检查可见元素的父级边界和 Panel 同级重叠（显式标记的叠加层除外），滚动区域按完整画布检查并逐项滚动确认交互控件可见；主窗各状态、设置两页以 root `LayoutTransform` 执行 1 / 1.25 / 1.5 / 2 倍布局检查。使用 `RenderTargetBitmap` 输出 `client-ready.png`、`client-recording.png`、`client-collapsed.png`、`client-nocamera.png`、`settings-main.png`、`settings-advanced.png` 和 `edge-indicator.png`。模拟不能替代 Windows 10/11 实机的 100/125/150/200% DPI、跨屏拖动、图标字体回退与辅助功能验收。
+`--smoke-test` 保留原有 desktop / camera / both / noCamera 录制阶段、媒体、解析器、资源租约、恢复和隐身检查。WPF 在 `UpdateLayout` 后检查可见元素的父级边界和 Panel 同级重叠（显式标记的叠加层除外），滚动区域按完整画布检查并逐项滚动确认交互控件可见；主窗各状态、设置两页和边缘提示以 `VisualTreeHelper.SetRootDpi` 执行 1 / 1.25 / 1.5 / 2 倍 DPI 布局检查，保持逻辑宽度不变，并在每个夹具结束时恢复原 DPI；边界按当前 DPI 换算为屏幕像素。使用 `RenderTargetBitmap` 输出 `client-ready.png`、`client-recording.png`、`client-collapsed.png`、`client-nocamera.png`、`settings-main.png`、`settings-advanced.png` 和 `edge-indicator.png`。模拟不能替代 Windows 10/11 实机的 100/125/150/200% DPI、跨屏拖动、图标字体回退与辅助功能验收。
 
 ## 录制计时与屏幕边缘提示
 

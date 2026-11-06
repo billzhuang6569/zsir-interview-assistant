@@ -507,6 +507,41 @@ internal static class SmokeTest
             throw new Exception("Old settings must default to desktop");
     }
 
+    internal static IDisposable ScaleForLayoutTest(Window window, double factor) => new LayoutDpiScope(window, factor);
+    sealed class LayoutDpiScope : IDisposable
+    {
+        readonly Window window;
+        readonly Visual root;
+        readonly DpiScale original;
+        internal LayoutDpiScope(Window window, double factor)
+        {
+            this.window = window;
+            root = PresentationSource.FromVisual(window)?.RootVisual ?? window;
+            original = VisualTreeHelper.GetDpi(root);
+            try
+            {
+                VisualTreeHelper.SetRootDpi(root, new DpiScale(factor, factor));
+                window.InvalidateMeasure(); window.UpdateLayout();
+            }
+            catch
+            {
+                VisualTreeHelper.SetRootDpi(root, original);
+                window.InvalidateMeasure(); window.UpdateLayout();
+                throw;
+            }
+        }
+        public void Dispose()
+        {
+            VisualTreeHelper.SetRootDpi(root, original);
+            window.InvalidateMeasure(); window.UpdateLayout();
+        }
+    }
+    static void CheckDpi(Visual visual, DpiScale expected)
+    {
+        var actual = VisualTreeHelper.GetDpi(visual);
+        if (Math.Abs(actual.DpiScaleX - expected.DpiScaleX) > .000001 || Math.Abs(actual.DpiScaleY - expected.DpiScaleY) > .000001)
+            throw new Exception($"DPI mismatch in {visual.GetType().Name}: {actual.DpiScaleX}/{actual.DpiScaleY}, expected {expected.DpiScaleX}/{expected.DpiScaleY}");
+    }
     static void CheckLayoutFixtures(string tools, string root, Dictionary<string, List<string>> failures)
     {
         foreach (double scale in new[] { 1.0, 1.25, 1.5, 2.0 })
@@ -516,10 +551,41 @@ internal static class SmokeTest
             void Check(string surface, Action check) => RecordLayout(failures, prefix + surface, check);
             void Capture(Window window, string file) => CaptureWindow(window, Path.Combine(root, file), failures, prefix + file);
             var fixture = new MainWindow(tools, automation: true, layoutOnly: true);
+            DpiScale? originalDpi = null;
             try
             {
                 var controller = fixture.Controller;
-                controller.SetMode(mode, persist: false); fixture.Show(); fixture.ScaleForLayoutTest(scale);
+                controller.SetMode(mode, persist: false); fixture.Show();
+                originalDpi = VisualTreeHelper.GetDpi(fixture);
+                using var mainDpi = fixture.ScaleForLayoutTest(scale);
+                Check("main-dpi", () =>
+                {
+                    FlushLayout(fixture);
+                    CheckDpi(fixture, new DpiScale(scale, scale)); CheckDpi(fixture.Root, new DpiScale(scale, scale));
+                    if (fixture.Width != 336) throw new Exception("DPI fixtures must preserve the logical window width");
+                });
+                if (mode == "desktop")
+                {
+                    var originalEdgeDpi = VisualTreeHelper.GetDpi(fixture.Edge);
+                    try
+                    {
+                        fixture.Edge.Show();
+                        originalEdgeDpi = VisualTreeHelper.GetDpi(fixture.Edge);
+                        using var edgeDpi = fixture.Edge.ScaleForLayoutTest(scale);
+                        Check("edge", () =>
+                        {
+                            CheckLayout(fixture.Edge); CheckDpi(fixture.Edge, new DpiScale(scale, scale));
+                            CheckDpi(fixture.Edge.RevealButton, new DpiScale(scale, scale));
+                            if (fixture.Edge.Width != 30) throw new Exception("Edge DPI fixtures must preserve the logical window width");
+                        });
+                        if (scale == 1) Capture(fixture.Edge, "edge-indicator.png");
+                    }
+                    finally
+                    {
+                        Check("edge-dpi-restored", () => CheckDpi(fixture.Edge, originalEdgeDpi));
+                        fixture.Edge.Hide();
+                    }
+                }
                 Check("ready-empty", () =>
                 {
                     CheckLayout(fixture);
@@ -584,9 +650,17 @@ internal static class SmokeTest
                     if (scale == 1) Capture(fixture, "client-nocamera.png");
                 }
                 var settings = fixture.CreateSettingsWindow();
+                DpiScale? originalSettingsDpi = null;
                 try
                 {
-                    settings.Show(); settings.ScaleForLayoutTest(scale);
+                    settings.Show(); originalSettingsDpi = VisualTreeHelper.GetDpi(settings);
+                    using var settingsDpi = settings.ScaleForLayoutTest(scale);
+                    Check("settings-dpi", () =>
+                    {
+                        FlushLayout(settings);
+                        CheckDpi(settings, new DpiScale(scale, scale)); CheckDpi(settings.Viewport, new DpiScale(scale, scale));
+                        if (settings.Width != 560) throw new Exception("Settings DPI fixtures must preserve the logical window width");
+                    });
                     if (scale == 1) Capture(settings, mode == "both" ? "settings-main.png" : "settings-" + mode + "-main.png");
                     Check("settings-main", () =>
                     {
@@ -607,10 +681,18 @@ internal static class SmokeTest
                     });
                     settings.ShowAdvanced(false); Check("settings-back", () => CheckLayout(settings));
                 }
-                finally { settings.Close(); }
+                finally
+                {
+                    if (originalSettingsDpi is { } settingsDpi) Check("settings-dpi-restored", () => CheckDpi(settings, settingsDpi));
+                    settings.Close();
+                }
             }
             catch (Exception ex) { RecordLayout(failures, prefix + "fixture", () => throw new Exception("Fixture failed", ex)); }
-            finally { fixture.Close(); }
+            finally
+            {
+                if (originalDpi is { } mainDpi) Check("main-dpi-restored", () => CheckDpi(fixture, mainDpi));
+                fixture.Close();
+            }
         }
     }
     static void CheckSettingsAffinity(SettingsWindow settings, MainWindow fixture)
@@ -649,6 +731,7 @@ internal static class SmokeTest
     {
         var bounds = new Rect(element.RenderSize);
         if (element != root) bounds = element.TransformToAncestor(root).TransformBounds(bounds);
+        // Ancestor transforms are logical; GetDpi includes the fixture's simulated root DPI.
         var dpi = VisualTreeHelper.GetDpi(root);
         bounds.Scale(dpi.DpiScaleX, dpi.DpiScaleY);
         return bounds;

@@ -137,9 +137,6 @@ public partial class MainWindow : Window, IRecordingHost
         if (!Controller.Automation) MessageBox.Show(this, "请先停止录制并等待保存完成，再关闭窗口。", "正在处理素材");
     }
     IntPtr WindowMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam, ref bool handled) { Controller.HandleSystemMessage(message, wParam); return IntPtr.Zero; }
-    internal void ScaleForLayoutTest(double factor)
-    {
-        Root.LayoutTransform = new ScaleTransform(factor, factor); Width = 336 * factor; UpdateLayout();
-    }
+    internal IDisposable ScaleForLayoutTest(double factor) => SmokeTest.ScaleForLayoutTest(this, factor);
     internal void FitContent() => UpdateLayout();
 }

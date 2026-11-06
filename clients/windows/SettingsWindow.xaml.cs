@@ -265,7 +265,7 @@ public partial class SettingsWindow : Window
         return IntPtr.Zero;
     }
     internal void FitContent() => UpdateLayout();
-    internal void ScaleForLayoutTest(double factor) { Root.LayoutTransform = new ScaleTransform(factor, factor); Width = 560 * factor; UpdateLayout(); }
+    internal IDisposable ScaleForLayoutTest(double factor) => SmokeTest.ScaleForLayoutTest(this, factor);
     sealed record NativeOwner(IntPtr Handle) : Forms.IWin32Window;
     internal sealed record DisplayChoice(string Id, string Name, string Metadata, BitmapSource? Thumbnail);
 }
