@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Channels;
@@ -8,6 +9,7 @@ namespace ZSirCapture;
 
 internal sealed class Recorder
 {
+    bool stealthInCapture = true;
     readonly string tools;
     readonly Loopback audio = new();
     readonly TaskCompletionSource videoReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -66,8 +68,9 @@ internal sealed class Recorder
     internal Process? Encoder => process;
     public Recorder(string toolsDirectory) { tools = toolsDirectory; }
 
-    public async Task StartAsync(string root, Rectangle bounds, string audioDevice, string quality = "standard", bool systemAudio = true, string outputProfile = "native")
+    public async Task StartAsync(string root, Rectangle bounds, string audioDevice, string quality = "standard", bool systemAudio = true, string outputProfile = "native", bool stealthInCapture = true)
     {
+        this.stealthInCapture = stealthInCapture;
         this.quality = quality; this.systemAudio = systemAudio; captureBounds = bounds;
         this.outputProfile = outputProfile;
         outputSize = RecordingOptions.OutputSize(outputProfile, bounds.Width, bounds.Height);
@@ -605,7 +608,7 @@ internal sealed class Recorder
 
     ProcessStartInfo StartInfo(string name, IEnumerable<string> args)
     {
-        var info = new ProcessStartInfo(Path.Combine(tools, name)) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true };
+        var info = new ProcessStartInfo(Path.Combine(tools, name)) { UseShellExecute = false, CreateNoWindow = true, RedirectStandardError = true, RedirectStandardOutput = true, StandardOutputEncoding = new UTF8Encoding(false), StandardErrorEncoding = new UTF8Encoding(false) };
         foreach (string arg in args) info.ArgumentList.Add(arg);
         return info;
     }
@@ -613,7 +616,7 @@ internal sealed class Recorder
     {
         if (Folder == null) return;
         string path = Path.Combine(Folder, "report.json"), temporary = path + ".tmp";
-        File.WriteAllText(temporary, JsonSerializer.Serialize(new { state, platform = "windows", mode = "desktop", videoStartUnix, audioStartUnix = audio.OriginUnix, quality, qualityVersion = 1, systemAudio, outputProfile, outputWidth = outputSize.Width, outputHeight = outputSize.Height, framesPerSecond = 30, captureBackend, captureProbe, encoder, encoderProbe, previewGateSupported, previewGateState, encoderThreads, resourcePolicy = "experimental unmeasured caps; startup estimate is conservative admission heuristic, not a measured peak guarantee", startupCommitBudgetBytes = startupCommitBudget, runtimeCommitSafetyFloorBytes = ResourceBudget.SafetyFloor, filterThreads = 1, inputQueuePackets = 3, lookaheadFrames = 10, diagnostics = new { droppedLogLines = Interlocked.Read(ref droppedLogLines), writtenFrames = Interlocked.Read(ref writtenFrames), encoderDuplicatedFrames = Interlocked.Read(ref duplicatedFrames), encoderDroppedFrames = Interlocked.Read(ref droppedFrames), capturedFrames = (long?)null, scheduledFrames = (long?)null, note = "FFmpeg output progress only; source admission and queue counters unavailable for the selected FFmpeg capture backend" }, targetVideoBitRate, captureBounds, finalizationPolicy, cleanupPending = CleanupPending, device = audio.DeviceName, details, updatedAt = DateTimeOffset.UtcNow }, new JsonSerializerOptions { WriteIndented = true }));
+        File.WriteAllText(temporary, JsonSerializer.Serialize(new { state, platform = "windows", mode = "desktop", stealthInCapture, videoStartUnix, audioStartUnix = audio.OriginUnix, quality, qualityVersion = 1, systemAudio, outputProfile, outputWidth = outputSize.Width, outputHeight = outputSize.Height, framesPerSecond = 30, captureBackend, captureProbe, encoder, encoderProbe, previewGateSupported, previewGateState, encoderThreads, resourcePolicy = "experimental unmeasured caps; startup estimate is conservative admission heuristic, not a measured peak guarantee", startupCommitBudgetBytes = startupCommitBudget, runtimeCommitSafetyFloorBytes = ResourceBudget.SafetyFloor, filterThreads = 1, inputQueuePackets = 3, lookaheadFrames = 10, diagnostics = new { droppedLogLines = Interlocked.Read(ref droppedLogLines), writtenFrames = Interlocked.Read(ref writtenFrames), encoderDuplicatedFrames = Interlocked.Read(ref duplicatedFrames), encoderDroppedFrames = Interlocked.Read(ref droppedFrames), capturedFrames = (long?)null, scheduledFrames = (long?)null, note = "FFmpeg output progress only; source admission and queue counters unavailable for the selected FFmpeg capture backend" }, targetVideoBitRate, captureBounds, finalizationPolicy, cleanupPending = CleanupPending, device = audio.DeviceName, details, updatedAt = DateTimeOffset.UtcNow }, new JsonSerializerOptions { WriteIndented = true }));
         File.Move(temporary, path, true);
     }
     static string N(object value) => Convert.ToString(value, CultureInfo.InvariantCulture)!;

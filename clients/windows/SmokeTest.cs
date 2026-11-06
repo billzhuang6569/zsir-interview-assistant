@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Media;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -9,6 +10,8 @@ namespace ZSirCapture;
 
 internal static class SmokeTest
 {
+    [DllImport("user32.dll")] static extern bool GetWindowDisplayAffinity(IntPtr window, out uint affinity);
+
     public static async Task RunAsync(MainForm form, string tools, string root)
     {
         Directory.CreateDirectory(root);
@@ -20,6 +23,19 @@ internal static class SmokeTest
             int spacing = duration == 18 ? 5 : (duration - 8) / 2;
             var analysisTimeout = TimeSpan.FromSeconds(Math.Max(60, duration / 2));
             report["requestedSeconds"] = duration;
+            if (!new RecordingOptions().StealthInCapture || !JsonSerializer.Deserialize<RecordingOptions>("{}")!.StealthInCapture) throw new Exception("Stealth must default to true, including old settings");
+            bool originalStealth = form.StealthInCapture;
+            try
+            {
+                form.SetStealthInCapture(false, persist: false);
+                if (!GetWindowDisplayAffinity(form.Handle, out uint visibleAffinity) || visibleAffinity != 0 ||
+                    !GetWindowDisplayAffinity(form.Edge.Handle, out uint visibleEdgeAffinity) || visibleEdgeAffinity != 0) throw new Exception("Stealth off did not clear window affinity");
+                form.SetStealthInCapture(true, persist: false);
+                if (!GetWindowDisplayAffinity(form.Handle, out uint hiddenAffinity) || hiddenAffinity != 0x11 ||
+                    !GetWindowDisplayAffinity(form.Edge.Handle, out uint hiddenEdgeAffinity) || hiddenEdgeAffinity != 0x11) throw new Exception("Stealth on did not restore window affinity");
+                report["captureVisibilityPassed"] = true;
+            }
+            finally { form.SetStealthInCapture(originalStealth, persist: false); }
             CheckAudioFile(root);
             var blockedWriter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             string pendingLeasePath = Path.Combine(root, "pending-cleanup.lock");
@@ -91,6 +107,8 @@ internal static class SmokeTest
             if (form.LastError != null) throw form.LastError;
             if (form.Edge.IsDocked || !form.Visible) throw new Exception("Stop did not restore window");
             string take = form.LastFolder!, video = Path.Combine(take, "desktop.mp4");
+            using (var takeReport = JsonDocument.Parse(File.ReadAllText(Path.Combine(take, "report.json"))))
+                if (takeReport.RootElement.GetProperty("stealthInCapture").GetBoolean() != form.StealthInCapture) throw new Exception("Report stealth state does not match recording");
             var info = await recorder.ProbeAsync(video);
             report["take"] = take; report["media"] = info; report["audioPackets"] = packets;
             var decode = await recorder.RunAsync("ffmpeg.exe", ["-v", "error", "-xerror", "-i", video, "-f", "null", "NUL"], analysisTimeout);

@@ -53,6 +53,18 @@ final class CaptureModel: ObservableObject {
             permissions.defaults.set(systemAudio, forKey: "systemAudio")
         }
     }
+    @Published private(set) var stealthInCapture = true
+    static func sharingType(stealth: Bool) -> NSWindow.SharingType { stealth ? .none : .readOnly }
+    var captureSharingType: NSWindow.SharingType { Self.sharingType(stealth: stealthInCapture) }
+    func setStealthInCapture(_ value: Bool) {
+        guard !busy else { return }
+        stealthInCapture = value
+        permissions.defaults.set(value, forKey: "stealthInCapture")
+        for window in NSApp.windows {
+            window.sharingType = captureSharingType
+            for sheet in window.sheets { sheet.sharingType = captureSharingType }
+        }
+    }
     @Published var autoRecovery = false { didSet { permissions.defaults.set(autoRecovery, forKey: "autoRecovery") } }
     let settingsPreview = SettingsPreview()
     private var deviceObservers: [NSObjectProtocol] = []
@@ -424,6 +436,7 @@ final class CaptureModel: ObservableObject {
         profile = RecordingProfile(rawValue: defaults.string(forKey: "recordingProfile") ?? "") ?? (existingSettings ? .native : .balanced)
         quality = RecordingQuality(rawValue: permissions.defaults.string(forKey: "recordingQuality") ?? "") ?? .standard
         systemAudio = RecordingCapabilities.systemAudio && (permissions.defaults.object(forKey: "systemAudio") as? Bool ?? true)
+        stealthInCapture = defaults.object(forKey: "stealthInCapture") as? Bool ?? true
         autoRecovery = permissions.defaults.bool(forKey: "autoRecovery")
         selection = DeviceSelection(cameraID: permissions.defaults.string(forKey: "cameraID") ?? "", microphoneID: permissions.defaults.string(forKey: "microphoneID") ?? "")
         mode = RecordingMode(rawValue: permissions.defaults.string(forKey: "recordingMode") ?? "") ?? .both
@@ -539,7 +552,7 @@ final class CaptureModel: ObservableObject {
                     throw RecordingError("设置预览未能及时释放，请退出并重新打开")
                 }
                 attemptedStart = true
-                lastTake = try await recorder.start(in: root, mode: mode, selection: selection, quality: quality, systemAudio: systemAudio, profile: profile)
+                lastTake = try await recorder.start(in: root, mode: mode, selection: selection, quality: quality, systemAudio: systemAudio, profile: profile, stealthInCapture: stealthInCapture)
                 canStop = true
                 if self.error != nil { stop(); return }
                 phase = "等待录制数据…"
@@ -609,6 +622,10 @@ final class CaptureWindow: NSWindow {
     override func update() { super.update(); hideNativeButtons() }
     override func becomeKey() { super.becomeKey(); hideNativeButtons() }
     override func becomeMain() { super.becomeMain(); hideNativeButtons() }
+    override func beginSheet(_ sheetWindow: NSWindow, completionHandler handler: ((NSApplication.ModalResponse) -> Void)? = nil) {
+        sheetWindow.sharingType = sharingType
+        super.beginSheet(sheetWindow, completionHandler: handler)
+    }
     override func endSheet(_ sheetWindow: NSWindow) {
         super.endSheet(sheetWindow)
         hideNativeButtons()
@@ -628,11 +645,20 @@ private final class CaptureHostingView: NSHostingView<CaptureView> {
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     let model = CaptureModel()
     var window: NSWindow?
     var edgeController: RecordingEdgeController?
     var updateTimer: Timer?
+
+    @objc private func toggleStealth(_ sender: NSMenuItem) { model.setStealthInCapture(!model.stealthInCapture) }
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(toggleStealth(_:)) {
+            menuItem.state = model.stealthInCapture ? .on : .off
+            return !model.busy
+        }
+        return true
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -643,11 +669,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem()
         menu.addItem(appItem)
         let appMenu = NSMenu()
+        let stealthItem = appMenu.addItem(withTitle: "在录屏里隐身", action: #selector(toggleStealth(_:)), keyEquivalent: "")
+        stealthItem.target = self
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "退出庄Sir采访录制助手", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
         NSApp.mainMenu = menu
         let panel = CaptureWindow(contentRect: NSRect(x: 0, y: 0, width: 336, height: 300),
                              styleMask: [.titled, .fullSizeContentView], backing: .buffered, defer: false)
+        panel.sharingType = model.captureSharingType
         panel.title = RecordingCapabilities.applicationName
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true

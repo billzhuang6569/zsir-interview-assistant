@@ -7,6 +7,7 @@ internal sealed class RecordingOptions
     public string AudioId { get; set; } = "";
     public string Quality { get; set; } = "standard";
     public string OutputProfile { get; set; } = "balanced";
+    public bool StealthInCapture { get; set; } = true;
     public bool SystemAudio { get; set; } = true;
     internal const int FramesPerSecond = 30;
     internal static (int Width, int Height) OutputSize(string profile, int width, int height)

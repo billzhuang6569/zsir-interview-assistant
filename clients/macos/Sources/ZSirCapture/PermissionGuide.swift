@@ -11,6 +11,7 @@ final class PermissionGuide {
     func show() {
         close()
         let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 390, height: 300), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.sharingType = (NSApp.delegate as? AppDelegate)?.model.captureSharingType ?? .none
         panel.level = .floating; panel.isFloatingPanel = true; panel.hidesOnDeactivate = false
         panel.isMovable = false; panel.isMovableByWindowBackground = false; panel.isReleasedWhenClosed = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]

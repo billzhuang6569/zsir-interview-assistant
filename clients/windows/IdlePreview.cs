@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 
 namespace ZSirCapture;
 
@@ -18,7 +19,8 @@ internal sealed class IdlePreview : IDisposable
         Bounds = bounds;
         var info = new ProcessStartInfo(Path.Combine(tools, "ffmpeg.exe")) {
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
-            RedirectStandardOutput = true, RedirectStandardError = true
+            RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardOutputEncoding = new UTF8Encoding(false), StandardErrorEncoding = new UTF8Encoding(false)
         };
         string[] args = ["-hide_banner", "-loglevel", "error", "-f", "gdigrab", "-framerate", "5",
             "-offset_x", bounds.X.ToString(CultureInfo.InvariantCulture), "-offset_y", bounds.Y.ToString(CultureInfo.InvariantCulture),

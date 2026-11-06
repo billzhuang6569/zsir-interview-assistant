@@ -128,6 +128,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var previewEnabled = true
     private var previewToken: UInt64 = 0
     private var previewPending: Set<String> = []
+    private var stealthInCapture = true
     private var mode: RecordingMode = .both
     private var lease: TakeLease?
     private var activity: NSObjectProtocol?
@@ -199,12 +200,12 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         return recordingDevicesRequested
     }
 
-    func start(in root: URL, mode: RecordingMode, selection: DeviceSelection, quality: RecordingQuality = .standard, systemAudio: Bool = true, profile: RecordingProfile = .native) async throws -> URL {
+    func start(in root: URL, mode: RecordingMode, selection: DeviceSelection, quality: RecordingQuality = .standard, systemAudio: Bool = true, profile: RecordingProfile = .native, stealthInCapture: Bool = true) async throws -> URL {
         markRecordingDeviceStartup()
         let gate = RecordingResult<URL>()
         Task { [self] in
             do {
-                let take = try await startResources(in: root, mode: mode, selection: selection, quality: quality, systemAudio: systemAudio, profile: profile)
+                let take = try await startResources(in: root, mode: mode, selection: selection, quality: quality, systemAudio: systemAudio, profile: profile, stealthInCapture: stealthInCapture)
                 if !gate.complete(.success(take)) { try? await stop() }
             } catch {
                 recordingDevicesSettled.complete(.success(()))
@@ -228,7 +229,8 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         if !stopping { cleanupGate.complete(.success(())) }
     }
 
-    private func startResources(in root: URL, mode: RecordingMode, selection: DeviceSelection, quality: RecordingQuality, systemAudio: Bool, profile: RecordingProfile) async throws -> URL {
+    private func startResources(in root: URL, mode: RecordingMode, selection: DeviceSelection, quality: RecordingQuality, systemAudio: Bool, profile: RecordingProfile, stealthInCapture: Bool) async throws -> URL {
+        self.stealthInCapture = stealthInCapture
         self.mode = mode
         self.selection = selection
         self.quality = quality
@@ -246,7 +248,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         lease = try TakeLease(folder: take)
         devices = ["system": ProcessInfo.processInfo.operatingSystemVersionString]
         captureError = nil
-        try TakeFiles.writeReport(["state": "preparing", "mode": mode.rawValue], in: take)
+        try TakeFiles.writeReport(["state": "preparing", "mode": mode.rawValue, "stealthInCapture": stealthInCapture], in: take)
         do {
             activity = ProcessInfo.processInfo.beginActivity(options: [.userInitiated, .idleSystemSleepDisabled], reason: "正在录制采访素材")
             watchInterruptions()
@@ -272,7 +274,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             try await withCheckedThrowingContinuation { continuation in
                 firstFrames.observe { continuation.resume(with: $0) }
             }
-            try TakeFiles.writeReport(["state": "recording", "mode": mode.rawValue, "quality": quality.rawValue, "systemAudio": systemAudio,
+            try TakeFiles.writeReport(["state": "recording", "mode": mode.rawValue, "stealthInCapture": stealthInCapture, "quality": quality.rawValue, "systemAudio": systemAudio,
                 "startedAt": ISO8601DateFormatter().string(from: Date()), "devices": devices,
                 "startup": startupDiagnostics], in: take)
         } catch {
@@ -285,7 +287,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             }
             if let stream { try? await stream.stopCapture() }
             if mode.includesCamera { try? await sessionWork { [self] in session.stopRunning() } }
-            try? TakeFiles.writeReport(["state": "start_failed", "mode": mode.rawValue, "error": error.localizedDescription], in: take)
+            try? TakeFiles.writeReport(["state": "start_failed", "mode": mode.rawValue, "stealthInCapture": stealthInCapture, "error": error.localizedDescription], in: take)
             stream = nil
             releaseResources()
             throw error
@@ -745,7 +747,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                     if let timeout = stopGate.failureDescription { issues.append(timeout) }
                     let report: [String: Any] = [
                         "state": issues.values.isEmpty ? "finalized_unverified" : "needs_review",
-                        "devices": devices, "mode": mode.rawValue, "errors": issues.values, "startup": startupDiagnostics,
+                        "devices": devices, "mode": mode.rawValue, "stealthInCapture": stealthInCapture, "errors": issues.values, "startup": startupDiagnostics,
                         "profile": profile.rawValue, "quality": quality.rawValue, "qualityVersion": 1, "systemAudio": systemAudio,
                         "durationSeconds": Date().timeIntervalSince(startedAt),
                         "tracks": Dictionary(uniqueKeysWithValues: writers.map { ($0.0, self.metrics($0.1)) }),

@@ -25,7 +25,7 @@ final class RecordingEdgeController {
         indicator.hidesOnDeactivate = false
         indicator.level = .floating
         indicator.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        indicator.sharingType = .none
+        indicator.sharingType = model.captureSharingType
         indicator.isReleasedWhenClosed = false
         indicator.contentView = NSHostingView(rootView: RecordingEdgeIndicator(model: model) { [weak self] in self?.reveal(activate: true) })
         window.acceptsMouseMovedEvents = true

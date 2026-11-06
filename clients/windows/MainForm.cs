@@ -17,6 +17,9 @@ internal sealed class MainForm : Form
     readonly Label state = new() { Text = "准备就绪", AutoSize = true, Font = new("Microsoft YaHei UI", 12, FontStyle.Bold) };
     readonly Label detail = new() { Text = "桌面 + 系统声音 · 仅保存在本机", AutoSize = true };
     readonly Label clock = new() { Text = "00:00:00", AutoSize = true, Visible = false, Font = new("Consolas", 22, FontStyle.Bold), ForeColor = Color.FromArgb(255, 137, 106) };
+    readonly TrayMenu tray;
+    Form? settingsDialog;
+    CheckBox? stealthCheck;
     readonly RecordingEdge edge;
     internal RecordingEdge Edge => edge;
     public string Timecode => clock.Text;
@@ -40,6 +43,9 @@ internal sealed class MainForm : Form
     DateTime nextIdlePreviewAttempt;
     public bool IsRecording => recording;
     public bool IsBusy => busy;
+    internal bool StealthInCapture => options.StealthInCapture;
+    internal bool CanChangeStealth => !busy && !recording && recorder?.CleanupPending != true;
+    internal bool CanStartRecording => CanChangeStealth && Enabled && (!StealthInCapture || excluded);
     public Recorder? CurrentRecorder => recorder;
     public string? LastFolder => lastFolder;
     public Exception? LastError { get; private set; }
@@ -52,6 +58,7 @@ internal sealed class MainForm : Form
         Automation = automation;
         Text = "庄Sir采访录制助手";
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
+        tray = new TrayMenu(this);
         Font = new("Microsoft YaHei UI", 9);
         BackColor = Color.FromArgb(29, 31, 38); ForeColor = Ink;
         DoubleBuffered = true;
@@ -90,7 +97,7 @@ internal sealed class MainForm : Form
         var buttons = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top, WrapContents = false, BackColor = Color.Transparent, Margin = Padding.Empty };
         buttons.Controls.Add(action);
         var open = new Button { Text = "素材目录", AutoSize = true };
-        open.Click += (_, _) => { try { string path = lastFolder ?? root; Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch (Exception ex) { ShowError(ex); } };
+        open.Click += (_, _) => OpenMaterialFolder();
         buttons.Controls.Add(open); buttons.Controls.Add(refresh); layout.Controls.Add(buttons);
         layout.Controls.Add(folder); Controls.Add(layout);
         StyleControls(layout);
@@ -134,8 +141,7 @@ internal sealed class MainForm : Form
             FitContent(); ApplyGlass();
             var working = Screen.FromHandle(Handle).WorkingArea;
             Location = new(working.Right - Width - 16, working.Top + 16);
-            excluded = SetWindowDisplayAffinity(Handle, 0x11);
-            if (!excluded) { action.Enabled = false; state.Text = "无法排除录制小窗"; detail.Text = "请使用 Windows 10 2004 或更新版本"; }
+            ApplyCaptureVisibility();
         };
         VisibleChanged += async (_, _) => { if (recorder != null) recorder.PreviewEnabled = previewVisible && Visible && WindowState != FormWindowState.Minimized; await UpdateIdlePreviewAsync(); };
         Resize += async (_, _) => await UpdateIdlePreviewAsync();
@@ -143,7 +149,7 @@ internal sealed class MainForm : Form
         {
             if (busy) { e.Cancel = true; if (!Automation) MessageBox.Show(this, "请先停止录制并等待保存完成，再关闭窗口。", "正在处理素材"); }
         };
-        FormClosed += (_, _) => { timer.Dispose(); idlePreview?.Dispose(); idlePreview = null; edge.Dispose(); preview.Image?.Dispose(); };
+        FormClosed += (_, _) => { tray.Dispose(); timer.Dispose(); idlePreview?.Dispose(); idlePreview = null; edge.Dispose(); preview.Image?.Dispose(); };
         try { if (File.Exists(preference)) { string saved = File.ReadAllText(preference).Trim(); if (Path.IsPathFullyQualified(saved)) root = saved; } RefreshDevices(); }
         catch (Exception ex) { ShowError(ex); }
         timer.Start();
@@ -151,11 +157,18 @@ internal sealed class MainForm : Form
 
     void ShowRecordingSettings()
     {
-        if (busy) return;
+        if (!CanChangeStealth) return;
         RefreshDevices();
         using var dialog = new Form { Text = "录制设置", Size = new(720, 660), StartPosition = FormStartPosition.CenterParent, BackColor = BackColor, ForeColor = Ink, Font = Font, AutoScroll = true, MinimizeBox = false, MaximizeBox = false };
         var content = new FlowLayoutPanel { Dock = DockStyle.Fill, AutoScroll = true, FlowDirection = FlowDirection.TopDown, WrapContents = false, Padding = new(24) };
+        settingsDialog = dialog;
+        dialog.HandleCreated += (_, _) => ApplyCaptureVisibility();
         dialog.Controls.Add(content);
+        var stealth = new CheckBox { Text = "在录屏里隐身", AutoSize = true, Checked = StealthInCapture };
+        stealthCheck = stealth;
+        stealth.CheckedChanged += (_, _) => { SetStealthInCapture(stealth.Checked); stealth.Checked = StealthInCapture; };
+        content.Controls.Add(stealth);
+        content.Controls.Add(new Label { Text = "开启：录制画面、远程协助和会议共享都看不到小窗。关闭：远程协助可以看到并操作小窗，但小窗也会被录进桌面画面。", AutoSize = true, MaximumSize = new(620, 0) });
         var title = new Label { Text = "桌面画面 · 点击缩略图选择", AutoSize = true, Font = new(Font, FontStyle.Bold) }; content.Controls.Add(title);
         var cards = new FlowLayoutPanel { Width = 640, Height = 200, AutoScroll = true, WrapContents = false };
         content.Controls.Add(cards);
@@ -232,6 +245,7 @@ internal sealed class MainForm : Form
         content.Controls.Add(recover);
         var done = new Button { Text = "完成", AutoSize = true, BackColor = Color.FromArgb(255, 102, 38) }; done.Click += (_, _) => dialog.Close(); content.Controls.Add(done);
         dialog.FormClosed += (_, _) => { foreach (Button card in cards.Controls) card.Image?.Dispose(); };
+        dialog.FormClosed += (_, _) => { settingsDialog = null; stealthCheck = null; ApplyCaptureVisibility(); };
         dialog.ShowDialog(this);
         _ = UpdateIdlePreviewAsync();
     }
@@ -378,11 +392,12 @@ internal sealed class MainForm : Form
     public async Task StartRecordingAsync()
     {
         if (busy || recorder?.CleanupPending == true) return;
+        if (!StealthInCapture && !Automation && MessageBox.Show(this, "已关闭「在录屏里隐身」：小窗会出现在本次桌面录制画面中（15 秒无操作后收起为边缘红点）。继续录制？", "录制提示", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning) != DialogResult.OK) return;
         LastError = null; clock.Text = "00:00:00"; clock.Visible = false; busy = true; SetControls(false); state.Text = "正在准备…";
         try
         {
             await StopIdlePreviewAsync();
-            if (!excluded) throw new InvalidOperationException("小窗排除设置未成功，取消录制");
+            if (StealthInCapture && !excluded) throw new InvalidOperationException("小窗排除设置未成功，取消录制");
             RefreshDevices();
             string id = options.ScreenId;
             Screen screen = id.Length == 0 ? Screen.PrimaryScreen! : Screen.AllScreens.FirstOrDefault(x => x.DeviceName == id) ?? throw new InvalidOperationException("所选显示器已断开");
@@ -411,7 +426,7 @@ internal sealed class MainForm : Form
                 catch (InvalidOperationException) { Interlocked.Exchange(ref pendingPreview, 0); }
             };
             var previous = preview.Image; preview.Image = null; previous?.Dispose();
-            await current.StartAsync(root, screen.Bounds, audioDevice?.Id ?? "", options.Quality, options.SystemAudio, options.OutputProfile);
+            await current.StartAsync(root, screen.Bounds, audioDevice?.Id ?? "", options.Quality, options.SystemAudio, options.OutputProfile, StealthInCapture);
             lastFolder = current.Folder; recording = true; clock.Visible = true; edge.ResetIdle();
             state.Text = "● 正在录制"; state.ForeColor = Color.FromArgb(255, 137, 106);
             action.Text = "■  停止并保存"; action.Enabled = true; fold.Text = previewVisible ? "实时预览  ∧" : "展开实时预览  ∨"; FitContent();
@@ -444,7 +459,38 @@ internal sealed class MainForm : Form
             fold.Text = previewVisible ? "上次录制画面  ∧" : "展开上次画面  ∨"; FitContent();
         }
     }
-    void SetControls(bool enabled) { enabled &= recorder?.CleanupPending != true; settingsButton.Enabled = screens.Enabled = outputs.Enabled = folder.Enabled = refresh.Enabled = enabled; action.Enabled = enabled && excluded; }
+    void SetControls(bool enabled) { enabled &= recorder?.CleanupPending != true; settingsButton.Enabled = screens.Enabled = outputs.Enabled = folder.Enabled = refresh.Enabled = enabled; action.Enabled = enabled && (!StealthInCapture || excluded); if (stealthCheck != null) stealthCheck.Enabled = CanChangeStealth; }
+    internal void SetStealthInCapture(bool value, bool persist = true)
+    {
+        if (!CanChangeStealth || value == StealthInCapture) return;
+        bool previous = StealthInCapture;
+        options.StealthInCapture = value;
+        try { if (persist) options.Save(); }
+        catch (Exception ex) { options.StealthInCapture = previous; ShowError(ex); return; }
+        ApplyCaptureVisibility();
+        if (stealthCheck != null) stealthCheck.Checked = value;
+    }
+    void ApplyCaptureVisibility()
+    {
+        excluded = CaptureVisibility.Apply(this, StealthInCapture);
+        edge.ApplyCaptureVisibility();
+        excluded &= edge.Excluded;
+        if (settingsDialog?.IsHandleCreated == true) excluded &= CaptureVisibility.Apply(settingsDialog, StealthInCapture);
+        SetControls(CanChangeStealth);
+        if (StealthInCapture && !excluded) { state.Text = "无法排除录制小窗"; detail.Text = "请使用 Windows 10 2004 或更新版本"; }
+        else if (state.Text == "无法排除录制小窗") { state.Text = "准备就绪"; detail.Text = "桌面 + 系统声音 · 仅保存在本机"; }
+    }
+    internal void ShowSmallWindow()
+    {
+        edge.Reveal(true); Show();
+        if (WindowState == FormWindowState.Minimized) WindowState = FormWindowState.Normal;
+        Activate();
+    }
+    internal void OpenMaterialFolder()
+    {
+        try { string path = lastFolder ?? root; Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+        catch (Exception ex) { ShowError(ex); }
+    }
     void ShowError(Exception ex) { edge.Reveal(false); LastError = ex; detail.Text = ex.Message; FitContent(); if (!Automation) MessageBox.Show(this, ex.Message, "录制提示", MessageBoxButtons.OK, MessageBoxIcon.Warning); }
     protected override void WndProc(ref Message message)
     {
@@ -453,7 +499,6 @@ internal sealed class MainForm : Form
         if ((message.Msg == 0x219 || message.Msg == 0x7E) && !busy) BeginInvoke((Action)RefreshDevices);
         base.WndProc(ref message);
     }
-    [DllImport("user32.dll", SetLastError = true)] static extern bool SetWindowDisplayAffinity(IntPtr window, uint affinity);
     [DllImport("kernel32.dll")] static extern uint SetThreadExecutionState(uint flags);
     record ScreenOption(string Id, string Name) { public override string ToString() => Name; }
 }
