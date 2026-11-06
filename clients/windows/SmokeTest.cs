@@ -36,6 +36,17 @@ internal static class SmokeTest
                 report["captureVisibilityPassed"] = true;
             }
             finally { form.SetStealthInCapture(originalStealth, persist: false); }
+            DisplayNames.CheckNativeLayout();
+            var fallbackName = DisplayNames.Caption(Screen.PrimaryScreen!, 0, new Dictionary<string, string>());
+            if (!fallbackName.StartsWith("显示器 1（主）") || fallbackName.Contains(@"\\.\DISPLAY")) throw new Exception("Display caption fallback failed");
+            var friendlyNames = new Dictionary<string, string> { [Screen.PrimaryScreen!.DeviceName] = "BenQ EX2780Q" };
+            if (DisplayNames.Caption(Screen.PrimaryScreen!, 0, friendlyNames) != "BenQ EX2780Q\n" + fallbackName)
+                throw new Exception("Display caption must separate friendly name from index and intact resolution");
+            friendlyNames[Screen.PrimaryScreen!.DeviceName] = "Long\r\nmonitor name";
+            if (DisplayNames.Caption(Screen.PrimaryScreen!, 0, friendlyNames) != "Long monitor name\n" + fallbackName)
+                throw new Exception("Display caption must not exceed two lines");
+            CheckLayoutFixtures(tools, root);
+            report["scaledLayoutFixturesPassed"] = new[] { 1f, 1.25f, 1.5f, 2f };
             CheckAudioFile(root);
             var blockedWriter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             string pendingLeasePath = Path.Combine(root, "pending-cleanup.lock");
@@ -231,13 +242,76 @@ internal static class SmokeTest
             form.Close();
         }
     }
-    static void CaptureWindow(MainForm form, string path)
+    static void CheckLayoutFixtures(string tools, string root)
     {
-        foreach (var button in Descendants(form).OfType<Button>().Where(x => x.Visible))
+        foreach (float scale in new[] { 1f, 1.25f, 1.5f, 2f })
         {
-            var bounds = form.RectangleToClient(button.RectangleToScreen(button.ClientRectangle));
-            if (!form.ClientRectangle.Contains(bounds)) throw new Exception("Button clipped: " + button.Text);
+            using var fixture = new MainForm(tools, automation: true, layoutOnly: true);
+            fixture.Show();
+            if (scale != 1) fixture.ScaleForLayoutTest(scale);
+            fixture.FitContent(); CheckLayout(fixture);
+            var toggle = (Button)fixture.Controls.Find("previewToggle", true).Single();
+            toggle.PerformClick(); CheckLayout(fixture);
+            toggle.PerformClick(); fixture.SetRecordingLayoutForTest(true); CheckLayout(fixture);
+            fixture.SetRecordingLayoutForTest(false);
+            using (var settings = fixture.CreateSettingsForm())
+            {
+                settings.Show(fixture);
+                if (scale != 1) settings.ScaleForLayoutTest(scale);
+                settings.FitContent(); CheckLayout(settings);
+                if (settings.MinimizeBox || settings.MaximizeBox || settings.ShowInTaskbar ||
+                    Descendants(settings).Any(c => c.AccessibleName == "关闭设置"))
+                    throw new Exception("Settings must use only the native close button and stay out of the taskbar");
+                CheckScrollablePage(settings);
+                if (scale == 1) CaptureWindow(settings, Path.Combine(root, "settings-main.png"));
+                if (!GetWindowDisplayAffinity(settings.Handle, out uint affinity) || affinity != (fixture.StealthInCapture ? 0x11u : 0u))
+                    throw new Exception("Settings window capture affinity mismatch");
+                settings.ShowAdvanced(true); settings.FitContent(); CheckLayout(settings); CheckScrollablePage(settings);
+                if (Descendants(settings).OfType<Label>().Count(l => l.Visible && l.Text.StartsWith("版本 ")) != 1)
+                    throw new Exception("Advanced settings must show the version exactly once");
+                if (scale == 1) CaptureWindow(settings, Path.Combine(root, "settings-advanced.png"));
+                settings.ShowAdvanced(false); CheckLayout(settings);
+                settings.Close();
+            }
+            fixture.Close();
         }
+    }
+    static void CheckScrollablePage(SettingsForm settings)
+    {
+        var viewport = settings.Controls.OfType<Panel>().Single();
+        var controls = Descendants(viewport).Where(c => c.Visible && c.TabStop && !c.HasChildren).ToArray();
+        foreach (var control in controls)
+        {
+            viewport.ScrollControlIntoView(control);
+            var bounds = viewport.RectangleToClient(control.RectangleToScreen(control.ClientRectangle));
+            if (!viewport.ClientRectangle.Contains(bounds)) throw new Exception("Settings control cannot scroll fully into view: " + control.AccessibleName + " " + control.Text);
+            CheckLayout(settings);
+        }
+        viewport.AutoScrollPosition = Point.Empty;
+    }
+    static void CheckLayout(Control parent)
+    {
+        parent.PerformLayout();
+        var children = parent.Controls.Cast<Control>().Where(c => c.Visible).ToArray();
+        // A scroll viewport deliberately contains a larger canvas; its children must fit that canvas.
+        Rectangle area = parent is ScrollableControl { AutoScroll: true } scroll ? scroll.DisplayRectangle : parent.ClientRectangle;
+        foreach (var child in children)
+        {
+            if (child.Width <= 0 || child.Height <= 0 || !area.Contains(child.Bounds))
+                throw new Exception($"Control clipped in {parent.GetType().Name}: {child.GetType().Name} {child.AccessibleName} {child.Text} {child.Bounds} outside {area}");
+            CheckLayout(child);
+        }
+        for (int i = 0; i < children.Length; i++)
+            for (int j = i + 1; j < children.Length; j++)
+            {
+                var overlap = Rectangle.Intersect(children[i].Bounds, children[j].Bounds);
+                if (overlap.Width > 0 && overlap.Height > 0)
+                    throw new Exception($"Sibling controls overlap: {children[i].Text} / {children[j].Text} in {parent.GetType().Name}");
+            }
+    }
+    static void CaptureWindow(Form form, string path)
+    {
+        CheckLayout(form);
         using var bitmap = new Bitmap(form.Width, form.Height);
         form.DrawToBitmap(bitmap, new Rectangle(Point.Empty, form.Size)); bitmap.Save(path);
     }
@@ -308,7 +382,7 @@ internal static class SmokeTest
     sealed class TestScene : Form
     {
         public bool Flash;
-        public TestScene() { Text = "庄Sir录制验收画面"; TopMost = true; FormBorderStyle = FormBorderStyle.None; Bounds = Screen.PrimaryScreen!.Bounds; StartPosition = FormStartPosition.Manual; DoubleBuffered = true; }
+        public TestScene() { AutoScaleDimensions = new SizeF(96F, 96F); AutoScaleMode = AutoScaleMode.Dpi; Text = "庄Sir录制验收画面"; TopMost = true; FormBorderStyle = FormBorderStyle.None; Location = Screen.PrimaryScreen!.Bounds.Location; Size = Screen.PrimaryScreen!.Bounds.Size; StartPosition = FormStartPosition.Manual; DoubleBuffered = true; }
         protected override void OnPaint(PaintEventArgs e)
         {
             e.Graphics.Clear(Flash ? Color.White : Color.FromArgb(18, 36, 60));

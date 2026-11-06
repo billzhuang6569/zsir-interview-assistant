@@ -22,7 +22,7 @@ FFmpeg不提交二进制到仓库、不在应用启动时下载。`script/build-
 - 保存阶段复制视频流、编码 AAC；需额外磁盘空间，长录制的保存可能较慢。合成失败不删除分离素材。
 - 系统声音采用 WASAPI render endpoint loopback，通过 QPC 时间戳补齐静音并对齐视频起点。RF64 WAV 不受普通 WAV 的 4 GB 长度字段限制。
 - `finalized_unverified` 只代表封装及双轨检查完成，仍需听检和 FCP 导入。睡眠、拔设备、写盘失败、系统时间跳变或编码器异常会停止并保留素材。
-- 不联网、不安装虚拟声卡、不改驱动。Windows 自动恢复界面和摄像头尚未实现。强杀前尚未写出的片段仍可能丢失。
+- 不联网、不安装虚拟声卡、不改驱动。高级设置支持手动扫描并恢复未完成素材的副本；摄像头尚未实现。强杀前尚未写出的片段仍可能丢失。
 
 ## 实机测试
 
@@ -35,11 +35,13 @@ FFmpeg不提交二进制到仓库、不在应用启动时下载。`script/build-
 官方依据：[WASAPI loopback](https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording)、[GetBuffer 时间戳](https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nf-audioclient-iaudiocaptureclient-getbuffer)、[小窗排除](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowdisplayaffinity)。
 
 
-## 2026-10-21 界面修订
+## 界面与 DPI
 
-名称统一为“庄Sir采访录制助手”，程序与快捷方式使用 REC / Zsir 图标。暗色渐变面板、暖橙主按钮、深色设备菜单；使用统一的深色标题区域，可拖动、最小化和关闭；Windows 11 请求系统 Acrylic 背景及圆角，内容面板保持深色渐变以保证可读性，实际系统材质受透明效果和 DWM 支持影响。内容高度随布局和预览折叠计算，不再写死折叠高度；停止后的预览注明为上次录制画面。目录打开失败会提示，不再让事件异常退出程序。
+主窗按 Mac 布局重排为 336 逻辑像素宽、16 逻辑像素内边距：标题与关闭、状态与说明、录制计时、机位选择、可折叠实时预览、开始/停止按钮与目录/设置图标。摄像头和双路机位暂不可用，保留桌面录制。预览标注是否包含系统声音；保存位置、设备重新检测和恢复入口移至设置的高级页。关闭按钮退出程序；托盘「显示小窗」可恢复收起或最小化的小窗。
 
-`--smoke-test` 额外检查折叠后高度减少、展开恢复、可见按钮没有被窗口裁切，并输出待录、折叠和录制界面截图。未验证所有 DPI、辅助功能模式或 Windows 10 的视觉效果。
+`Theme.cs` 统一暗色控件、图标字体和 DWM 暗色标题栏/圆角；`SettingsForm.cs` 提供可滚动的桌面设置及高级页，显示器缩略图与名称分区绘制，优先使用系统友好名称，查询失败则显示「显示器 N」。所有窗体以 96 DPI 为基准，启用 PerMonitorV2，跨屏 DPI 改变后重新计算布局与自绘尺寸。保留深色渐变主窗。
+
+`--smoke-test` 检查待录、折叠、录制及设置两页的可见控件边界与同级重叠；滚动区域按完整画布检查，并逐项滚动确认交互控件可完整显示。另用全新窗口执行 1 / 1.25 / 1.5 / 2 倍尺寸和字体缩放的布局模拟，不启动额外录制、不修改设置。输出原有主窗截图，以及 `settings-main.png`、`settings-advanced.png`。模拟不能替代 Windows 10/11 实机的 100/125/150/200% DPI、跨屏拖动、系统图标字体回退与辅助功能验收。
 
 ## 录制计时与屏幕边缘提示
 

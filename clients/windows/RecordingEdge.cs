@@ -18,6 +18,7 @@ internal sealed class RecordingEdge : Form, IMessageFilter
     public RecordingEdge(MainForm owner)
     {
         this.owner = owner;
+        AutoScaleDimensions = new SizeF(96F, 96F); AutoScaleMode = AutoScaleMode.Dpi;
         Text = "正在录制 · 点击展开";
         AccessibleRole = AccessibleRole.PushButton;
         AccessibleName = "展开录制窗口";
@@ -25,6 +26,9 @@ internal sealed class RecordingEdge : Form, IMessageFilter
         StartPosition = FormStartPosition.Manual;
         ClientSize = new(32, 40); BackColor = Color.Fuchsia; TransparencyKey = Color.Fuchsia;
         DoubleBuffered = true; Cursor = Cursors.Hand;
+        void FitContent() { ClientSize = new(LogicalToDeviceUnits(32), LogicalToDeviceUnits(40)); Place(); }
+        DpiChanged += (_, _) => { if (IsHandleCreated) BeginInvoke((Action)FitContent); };
+        DpiChangedAfterParent += (_, _) => FitContent();
         HandleCreated += (_, _) => ApplyCaptureVisibility();
         MouseClick += (_, _) => Reveal(true);
         animation.Tick += (_, _) => { Place(); Invalidate(); };
@@ -75,10 +79,11 @@ internal sealed class RecordingEdge : Form, IMessageFilter
         base.OnPaint(e);
         e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
         SystemParametersInfo(0x1042, 0, out bool animationsEnabled, 0);
-        float bounce = animationsEnabled ? (float)Math.Sin(motion.Elapsed.TotalSeconds * Math.PI / .85) * 2 : 0;
-        var circle = new RectangleF((Width - 19) / 2f, (Height - 19) / 2f + bounce, 19, 19);
+        float bounce = animationsEnabled ? (float)Math.Sin(motion.Elapsed.TotalSeconds * Math.PI / .85) * LogicalToDeviceUnits(2) : 0;
+        int diameter = LogicalToDeviceUnits(19);
+        var circle = new RectangleF((ClientSize.Width - diameter) / 2f, (ClientSize.Height - diameter) / 2f + bounce, diameter, diameter);
         using var fill = new SolidBrush(Color.FromArgb(35, 30, 32));
-        using var stroke = new Pen(Color.FromArgb(255, 65, 65), 3);
+        using var stroke = new Pen(Color.FromArgb(255, 65, 65), LogicalToDeviceUnits(3));
         e.Graphics.FillEllipse(fill, circle); e.Graphics.DrawEllipse(stroke, circle);
     }
     protected override void Dispose(bool disposing)
