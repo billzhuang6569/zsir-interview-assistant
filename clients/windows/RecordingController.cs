@@ -305,6 +305,7 @@ internal sealed class RecordingController : IDisposable
     }
     void SyncControls()
     {
+        ViewModel.HasWarning = LastError != null || recorder?.CleanupPending == true || (StealthInCapture && !excluded);
         ViewModel.CanChange = CanChangeStealth; ViewModel.CanStart = CanStartRecording && (!options.IncludesCamera || ViewModel.CameraMessage != "未检测到摄像头");
         ControlsChanged?.Invoke();
     }
@@ -333,7 +334,7 @@ internal sealed class RecordingController : IDisposable
         try { string path = lastFolder ?? root; Directory.CreateDirectory(path); Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
         catch (Exception ex) { ShowError(ex); }
     }
-    void ShowError(Exception ex) { host.Reveal(false); LastError = ex; ViewModel.Detail = ex.Message; if (!Automation) host.ShowError(ex); }
+    void ShowError(Exception ex) { host.Reveal(false); LastError = ex; ViewModel.HasWarning = true; ViewModel.Detail = ex.Message; if (!Automation) host.ShowError(ex); }
     internal void SetRecordingLayoutForTest(bool value)
     {
         ViewModel.IsRecording = value; ViewModel.HasTimecode = value; ViewModel.Timecode = "00:12:34"; ViewModel.Phase = value ? "正在录制" : "准备就绪"; SyncControls();

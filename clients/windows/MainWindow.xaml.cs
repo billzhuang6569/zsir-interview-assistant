@@ -32,7 +32,7 @@ public partial class MainWindow : Window, IRecordingHost
         tray = new TrayMenu(Controller, () => Reveal(true), Close);
         SourceInitialized += (_, _) =>
         {
-            if (WindowEffects.Apply(this, mica: true)) { Background = Brushes.Transparent; Root.Background = new SolidColorBrush(Color.FromArgb(217, 32, 34, 40)); }
+            if (WindowEffects.Apply(this, mica: true)) { Root.Background = new SolidColorBrush(Color.FromArgb(217, 32, 34, 40)); }
             source = HwndSource.FromHwnd(Handle); source?.AddHook(WindowMessage);
             new WindowInteropHelper(Edge).EnsureHandle();
             Controller.ApplyCaptureVisibility();

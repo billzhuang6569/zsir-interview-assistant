@@ -37,6 +37,11 @@
     <Setter Property="SnapsToDevicePixels" Value="True"/>
     <Setter Property="Icon" Value="/Assets/app.ico"/>
   </Style>
+  <Style TargetType="ItemsControl"><Setter Property="Foreground" Value="{StaticResource Ink}"/></Style>
+  <Style TargetType="ListBox"><Setter Property="Foreground" Value="{StaticResource Ink}"/></Style>
+  <Style TargetType="ListBoxItem"><Setter Property="Foreground" Value="{StaticResource Ink}"/></Style>
+  <Style TargetType="ToggleButton"><Setter Property="Foreground" Value="{StaticResource Ink}"/></Style>
+  <Style TargetType="RadioButton"><Setter Property="Foreground" Value="{StaticResource Muted}"/></Style>
   <Style TargetType="TextBlock">
     <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
   </Style>
@@ -44,6 +49,13 @@
     <Setter Property="FontFamily" Value="{StaticResource IconFont}"/>
     <Setter Property="FontSize" Value="16"/>
     <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="HorizontalAlignment" Value="Center"/>
+    <Setter Property="TextAlignment" Value="Center"/>
+    <Setter Property="Width" Value="{Binding FontSize, RelativeSource={RelativeSource Self}}"/>
+    <Setter Property="Height" Value="{Binding FontSize, RelativeSource={RelativeSource Self}}"/>
+    <Setter Property="LineHeight" Value="{Binding FontSize, RelativeSource={RelativeSource Self}}"/>
+    <Setter Property="LineStackingStrategy" Value="BlockLineHeight"/>
+    <Setter Property="Foreground" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Control}}"/>
   </Style>
   <Style x:Key="Hint" TargetType="TextBlock">
     <Setter Property="Foreground" Value="{StaticResource Muted}"/>
@@ -72,7 +84,7 @@
       <Setter.Value>
         <ControlTemplate TargetType="Button">
           <Border x:Name="Chrome" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
-            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
@@ -103,7 +115,7 @@
       <Setter.Value>
         <ControlTemplate TargetType="Button">
           <Border x:Name="Chrome" CornerRadius="8" Background="{TemplateBinding Background}" BorderThickness="1" BorderBrush="{TemplateBinding BorderBrush}">
-            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="8,0"/>
+            <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="8,0"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
@@ -147,7 +159,7 @@
       <Setter.Value>
         <ControlTemplate TargetType="Button">
           <Border x:Name="Chrome" CornerRadius="6" Background="{TemplateBinding Background}" BorderThickness="1" BorderBrush="{TemplateBinding BorderBrush}">
-            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
+            <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="{TemplateBinding Padding}"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
@@ -175,7 +187,7 @@
       <Setter.Value>
         <ControlTemplate TargetType="Button">
           <Border x:Name="Chrome" CornerRadius="8" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1">
-            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
@@ -222,7 +234,7 @@
       <Setter.Value>
         <ControlTemplate TargetType="RadioButton">
           <Border x:Name="Chrome" CornerRadius="6" BorderThickness="1" BorderBrush="Transparent" Background="Transparent">
-            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Center"/>
+            <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsMouseOver" Value="True">
@@ -253,6 +265,7 @@
     </Setter>
   </Style>
   <Style x:Key="Switch" TargetType="ToggleButton">
+    <Setter Property="Foreground" Value="{StaticResource Ink}"/>
     <Setter Property="Width" Value="40"/>
     <Setter Property="Height" Value="20"/>
     <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
@@ -296,7 +309,7 @@
       <Setter.Value>
         <ControlTemplate TargetType="ComboBoxItem">
           <Border x:Name="Chrome" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
-            <ContentPresenter/>
+            <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}"/>
           </Border>
           <ControlTemplate.Triggers>
             <Trigger Property="IsHighlighted" Value="True">
@@ -327,11 +340,11 @@
                   <ColumnDefinition/>
                   <ColumnDefinition Width="20"/>
                 </Grid.ColumnDefinitions>
-                <ContentPresenter VerticalAlignment="Center" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" IsHitTestVisible="False"/>
-                <TextBlock Grid.Column="1" Style="{StaticResource Icon}" Text="&#xE70D;" HorizontalAlignment="Right" FontSize="12"/>
+                <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}" VerticalAlignment="Center" Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}" IsHitTestVisible="False"/>
+                <TextBlock Foreground="{StaticResource Muted}" Grid.Column="1" Style="{StaticResource Icon}" Text="&#xE70D;" HorizontalAlignment="Right" FontSize="12"/>
               </Grid>
             </Border>
-            <ToggleButton Focusable="False" Tag="overlay" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" ClickMode="Press">
+            <ToggleButton Foreground="{StaticResource Ink}" Focusable="False" Tag="overlay" IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" ClickMode="Press">
               <ToggleButton.Template>
                 <ControlTemplate TargetType="ToggleButton">
                   <Border Background="Transparent"/>
@@ -407,12 +420,13 @@
     </Setter>
   </Style>
   <Style TargetType="ScrollViewer">
+    <Setter Property="Background" Value="Transparent"/>
     <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
     <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
     <Setter Property="Template">
       <Setter.Value>
         <ControlTemplate TargetType="ScrollViewer">
-          <Grid>
+          <Grid Background="{TemplateBinding Background}">
             <Grid.ColumnDefinitions>
               <ColumnDefinition/>
               <ColumnDefinition Width="Auto"/>

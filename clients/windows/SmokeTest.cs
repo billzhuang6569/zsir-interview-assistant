@@ -28,6 +28,8 @@ internal static class SmokeTest
         foreach (string name in stageNames) stages[name] = new { passed = false, error = "Stage did not run" };
         report["stages"] = stages;
         var errors = new List<string>();
+        var layoutFailures = new Dictionary<string, List<string>>();
+        report["layoutFailures"] = layoutFailures;
         var standaloneRecorders = new List<Recorder>();
         TestScene? scene = null;
         string originalMode = form.Options.Mode;
@@ -66,8 +68,8 @@ internal static class SmokeTest
                 friendlyNames[Screen.PrimaryScreen!.DeviceName] = "Long\r\nmonitor name";
                 if (DisplayNames.Caption(Screen.PrimaryScreen!, 0, friendlyNames) != "Long monitor name\n" + fallbackName)
                     throw new Exception("Display caption must not exceed two lines");
-                CheckLayoutFixtures(tools, root);
-                report["scaledLayoutFixturesPassed"] = new[] { 1f, 1.25f, 1.5f, 2f };
+                CheckLayoutFixtures(tools, root, layoutFailures);
+                report["scaledLayoutFixturesPassed"] = layoutFailures.Count == 0 ? new[] { 1f, 1.25f, 1.5f, 2f } : Array.Empty<float>();
                 CheckAudioFile(root);
                 var blockedWriter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
                 string pendingLeasePath = Path.Combine(root, "pending-cleanup.lock");
@@ -100,19 +102,19 @@ internal static class SmokeTest
                 FlushLayout(window);
                 double expandedHeight = window.ActualHeight;
                 toggle(); FlushLayout(window);
-                if (window.ActualHeight >= expandedHeight) throw new Exception("Preview collapse did not shrink window");
-                CaptureWindow(window, Path.Combine(root, "client-collapsed.png"));
+                RecordLayout(layoutFailures, "client-collapsed", () => { if (window.ActualHeight >= expandedHeight) throw new Exception("Preview collapse did not shrink window"); });
+                CaptureWindow(window, Path.Combine(root, "client-collapsed.png"), layoutFailures);
                 toggle(); FlushLayout(window);
-                if (Math.Abs(window.ActualHeight - expandedHeight) > .5) throw new Exception("Preview expand changed original window height");
-                CaptureWindow(window, Path.Combine(root, "client-ready.png"));
-                report["previewLayoutPassed"] = true;
+                RecordLayout(layoutFailures, "client-ready", () => { if (Math.Abs(window.ActualHeight - expandedHeight) > .5) throw new Exception("Preview expand changed original window height"); });
+                CaptureWindow(window, Path.Combine(root, "client-ready.png"), layoutFailures);
+                report["previewLayoutPassed"] = !layoutFailures.Keys.Any(key => key.StartsWith("client-"));
                 scene = new TestScene(); scene.Show(); window.Activate();
                 string tone = Path.Combine(root, "test-tone.wav"); WriteTone(tone);
                 using var player = new SoundPlayer(tone); player.Load();
                 await form.StartRecordingAsync();
                 if (!form.IsRecording) throw form.LastError ?? new Exception("Client did not enter recording state");
                 Recorder recorder = form.CurrentRecorder!;
-                CaptureWindow(window, Path.Combine(root, "client-recording.png"));
+                CaptureWindow(window, Path.Combine(root, "client-recording.png"), layoutFailures);
                 var clock = Stopwatch.StartNew(); int index = 0; double flashUntil = -1;
                 while (clock.Elapsed.TotalSeconds < duration)
                 {
@@ -128,11 +130,11 @@ internal static class SmokeTest
                 if (!window.Edge.IsDocked || window.IsVisible || !window.Edge.Excluded) throw new Exception("15-second idle docking failed");
                 if (form.Timecode == "00:00:00") throw new Exception("Recording timecode did not advance");
                 report["dockedTimecode"] = form.Timecode;
-                CaptureWindow(window.Edge, Path.Combine(root, "edge-indicator.png"));
+                CaptureWindow(window.Edge, Path.Combine(root, "edge-indicator.png"), layoutFailures);
                 window.Edge.Reveal(true);
                 await Task.Delay(700);
                 if (!window.IsVisible || window.Edge.IsDocked || !form.IsRecording) throw new Exception("Edge reveal interrupted recording");
-                CaptureWindow(window, Path.Combine(root, "client-recording.png"));
+                CaptureWindow(window, Path.Combine(root, "client-recording.png"), layoutFailures);
                 report["edgeDockAndRevealPassed"] = true;
                 long packets = recorder.AudioPackets;
                 await form.StopRecordingAsync();
@@ -170,7 +172,7 @@ internal static class SmokeTest
                 if (form.LastError != null) throw form.LastError;
                 report["secondTake"] = form.LastFolder;
                 report["secondMedia"] = await silent.ProbeAsync(Path.Combine(form.LastFolder!, "desktop.mp4"));
-                CaptureWindow(window, Path.Combine(root, "client-ui.png"));
+                CaptureWindow(window, Path.Combine(root, "client-ui.png"), layoutFailures);
                 var invalid = NewRecorder(tools);
                 bool rejected = false;
                 try { await invalid.StartAsync(root, Screen.PrimaryScreen!.Bounds, "zsir-nonexistent-output-device"); }
@@ -378,6 +380,7 @@ internal static class SmokeTest
         async Task RunStageAsync(string name, Func<Task> run)
         {
             string? error = null;
+            int layoutCount = layoutFailures.Values.Sum(items => items.Count);
             try
             {
                 await ResetStageAsync();
@@ -389,6 +392,9 @@ internal static class SmokeTest
                 try { await ResetStageAsync(); }
                 catch (Exception ex) { error = (error == null ? "" : error + Environment.NewLine) + "Cleanup: " + ex; }
             }
+            int newLayoutFailures = layoutFailures.Values.Sum(items => items.Count) - layoutCount;
+            if (newLayoutFailures > 0)
+                error = (error == null ? "" : error + Environment.NewLine) + $"{newLayoutFailures} layout/screenshot checks failed; see layoutFailures by surface.";
             stages[name] = new { passed = error == null, error };
             if (error != null) errors.Add(name + ": " + error);
         }
@@ -425,6 +431,7 @@ internal static class SmokeTest
     }
     internal static void CheckCameraParsers()
     {
+        CheckLayoutDiagnostics();
         const string devices = """
             [dshow @ 0000] "集成摄像头" (video)
             [dshow @ 0000]   Alternative name "@device_pnp_\\?\usb#one"
@@ -494,66 +501,88 @@ internal static class SmokeTest
             throw new Exception("Old settings must default to desktop");
     }
 
-    static void CheckLayoutFixtures(string tools, string root)
+    static void CheckLayoutFixtures(string tools, string root, Dictionary<string, List<string>> failures)
     {
         foreach (double scale in new[] { 1.0, 1.25, 1.5, 2.0 })
         foreach (string mode in new[] { "desktop", "camera", "both" })
         {
+            string prefix = $"{mode}@{scale:0.##}/";
+            void Check(string surface, Action check) => RecordLayout(failures, prefix + surface, check);
+            void Capture(Window window, string file) => CaptureWindow(window, Path.Combine(root, file), failures, prefix + file);
             var fixture = new MainWindow(tools, automation: true, layoutOnly: true);
             try
             {
                 var controller = fixture.Controller;
                 controller.SetMode(mode, persist: false); fixture.Show(); fixture.ScaleForLayoutTest(scale);
-                fixture.FitContent(); CheckLayout(fixture);
+                Check("ready-empty", () => CheckLayout(fixture));
                 var frame = BitmapSource.Create(32, 18, 96, 96, PixelFormats.Bgr32, null, new byte[32 * 18 * 4], 32 * 4); frame.Freeze();
                 controller.ViewModel.CameraImage = controller.ViewModel.DesktopImage = frame;
-                CheckLayout(fixture);
-                var tiles = new[] { fixture.CameraTile, fixture.DesktopTile }.Where(tile => tile.IsVisible).ToArray();
-                if (tiles.Length != (mode == "both" ? 2 : 1)) throw new Exception("Preview tile count does not match mode");
-                foreach (var tile in tiles)
+                Check("ready", () =>
                 {
-                    var picture = (AspectBorder)tile.FindName("Picture");
-                    if (Math.Abs(picture.ActualWidth / picture.ActualHeight - (mode == "both" ? 1.6 : 16.0 / 9)) > .03)
-                        throw new Exception("Preview tile aspect ratio does not match mode");
-                    if (tile.Margin != new Thickness(0) || Math.Abs(tile.ActualHeight - fixture.PreviewRow.ActualHeight) > 1)
-                        throw new Exception("Preview tiles must fit the container height without inner margins");
-                }
-                if (mode == "both")
-                {
-                    var left = tiles[0].TransformToAncestor(fixture.PreviewRow).TransformBounds(new Rect(tiles[0].RenderSize));
-                    var right = tiles[1].TransformToAncestor(fixture.PreviewRow).TransformBounds(new Rect(tiles[1].RenderSize));
-                    if (Math.Abs(left.Left) > 1 || Math.Abs(right.Right - fixture.PreviewRow.ActualWidth) > 1 ||
-                        Math.Abs(right.Left - left.Right - 8) > 1 || Math.Abs(left.Width - right.Width) > 1)
-                        throw new Exception("Dual preview must use equal widths separated by a scaled gap");
-                }
-                else if (Math.Abs(tiles[0].ActualWidth - fixture.PreviewRow.ActualWidth) > 1) throw new Exception("Single preview must fill its container");
-                controller.TogglePreview(); CheckLayout(fixture);
-                controller.TogglePreview(); controller.SetRecordingLayoutForTest(true); CheckLayout(fixture);
+                    CheckLayout(fixture);
+                    var tiles = new[] { fixture.CameraTile, fixture.DesktopTile }.Where(tile => tile.IsVisible).ToArray();
+                    if (tiles.Length != (mode == "both" ? 2 : 1)) throw new Exception("Preview tile count does not match mode");
+                    foreach (var tile in tiles)
+                    {
+                        var picture = (AspectBorder)tile.FindName("Picture");
+                        if (Math.Abs(picture.ActualWidth / picture.ActualHeight - (mode == "both" ? 1.6 : 16.0 / 9)) > .03)
+                            throw new Exception("Preview tile aspect ratio does not match mode");
+                        if (tile.Margin != new Thickness(0) || Math.Abs(tile.ActualHeight - fixture.PreviewRow.ActualHeight) > 1)
+                            throw new Exception("Preview tiles must fit the container height without inner margins");
+                    }
+                    if (mode == "both")
+                    {
+                        var left = tiles[0].TransformToAncestor(fixture.PreviewRow).TransformBounds(new Rect(tiles[0].RenderSize));
+                        var right = tiles[1].TransformToAncestor(fixture.PreviewRow).TransformBounds(new Rect(tiles[1].RenderSize));
+                        if (Math.Abs(left.Left) > 1 || Math.Abs(right.Right - fixture.PreviewRow.ActualWidth) > 1 ||
+                            Math.Abs(right.Left - left.Right - 8) > 1 || Math.Abs(left.Width - right.Width) > 1)
+                            throw new Exception("Dual preview must use equal widths separated by a scaled gap");
+                    }
+                    else if (Math.Abs(tiles[0].ActualWidth - fixture.PreviewRow.ActualWidth) > 1) throw new Exception("Single preview must fill its container");
+                });
+                if (scale == 1 && mode == "desktop") Capture(fixture, "client-ready.png");
+                controller.TogglePreview(); Check("collapsed", () => CheckLayout(fixture));
+                if (scale == 1 && mode == "desktop") Capture(fixture, "client-collapsed.png");
+                controller.TogglePreview(); controller.SetRecordingLayoutForTest(true); Check("recording", () => CheckLayout(fixture));
+                if (scale == 1 && mode == "both") Capture(fixture, "client-recording.png");
                 controller.SetRecordingLayoutForTest(false);
                 if (mode == "both")
                 {
-                    controller.SetNoCameraLayoutForTest(); CheckLayout(fixture);
-                    if (controller.ViewModel.CanStart || controller.ViewModel.PreviewState != "摄像头不可用") throw new Exception("No camera UI must explain the failure and disable recording");
-                    if (scale == 1) CaptureWindow(fixture, Path.Combine(root, "client-nocamera.png"));
+                    controller.SetNoCameraLayoutForTest();
+                    Check("no-camera", () =>
+                    {
+                        CheckLayout(fixture);
+                        if (controller.ViewModel.CanStart || controller.ViewModel.PreviewState != "摄像头不可用") throw new Exception("No camera UI must explain the failure and disable recording");
+                    });
+                    if (scale == 1) Capture(fixture, "client-nocamera.png");
                 }
                 var settings = fixture.CreateSettingsWindow();
                 try
                 {
-                    settings.Show(); settings.ScaleForLayoutTest(scale); settings.FitContent(); CheckLayout(settings);
-                    if (settings.ResizeMode != ResizeMode.NoResize || settings.ShowInTaskbar || settings.Owner != fixture ||
-                        Descendants(settings).OfType<Button>().Any(c => System.Windows.Automation.AutomationProperties.GetName(c) == "关闭设置"))
-                        throw new Exception("Settings must use only the native close button and stay out of the taskbar");
-                    CheckScrollablePage(settings);
-                    if (scale == 1) CaptureWindow(settings, Path.Combine(root, mode == "both" ? "settings-main.png" : "settings-" + mode + "-main.png"));
-                    CheckSettingsAffinity(settings, fixture);
-                    settings.ShowAdvanced(true); settings.FitContent(); CheckLayout(settings); CheckScrollablePage(settings);
-                    if (Descendants(settings).OfType<TextBlock>().Count(l => l.IsVisible && l.Text.StartsWith("版本 ")) != 1)
-                        throw new Exception("Advanced settings must show the version exactly once");
-                    if (scale == 1 && mode == "desktop") CaptureWindow(settings, Path.Combine(root, "settings-advanced.png"));
-                    settings.ShowAdvanced(false); CheckLayout(settings);
+                    settings.Show(); settings.ScaleForLayoutTest(scale);
+                    if (scale == 1) Capture(settings, mode == "both" ? "settings-main.png" : "settings-" + mode + "-main.png");
+                    Check("settings-main", () =>
+                    {
+                        CheckLayout(settings);
+                        if (settings.ResizeMode != ResizeMode.NoResize || settings.ShowInTaskbar || settings.Owner != fixture ||
+                            Descendants(settings).OfType<Button>().Any(c => System.Windows.Automation.AutomationProperties.GetName(c) == "关闭设置"))
+                            throw new Exception("Settings must use only the native close button and stay out of the taskbar");
+                        CheckScrollablePage(settings);
+                    });
+                    Check("settings-affinity", () => CheckSettingsAffinity(settings, fixture));
+                    settings.ShowAdvanced(true);
+                    if (scale == 1 && mode == "desktop") Capture(settings, "settings-advanced.png");
+                    Check("settings-advanced", () =>
+                    {
+                        CheckLayout(settings); CheckScrollablePage(settings);
+                        if (Descendants(settings).OfType<TextBlock>().Count(l => l.IsVisible && l.Text.StartsWith("版本 ")) != 1)
+                            throw new Exception("Advanced settings must show the version exactly once");
+                    });
+                    settings.ShowAdvanced(false); Check("settings-back", () => CheckLayout(settings));
                 }
                 finally { settings.Close(); }
             }
+            catch (Exception ex) { RecordLayout(failures, prefix + "fixture", () => throw new Exception("Fixture failed", ex)); }
             finally { fixture.Close(); }
         }
     }
@@ -577,9 +606,9 @@ internal static class SmokeTest
         foreach (var control in Descendants(settings.Root).OfType<Control>().Where(c => c.IsVisible && c.Focusable && c.IsEnabled).ToArray())
         {
             control.BringIntoView(); FlushLayout(settings);
-            var bounds = control.TransformToAncestor(settings.Viewport).TransformBounds(new Rect(control.RenderSize));
-            var area = new Rect(settings.Viewport.RenderSize); area.Inflate(1, 1);
-            if (!area.Contains(bounds)) throw new Exception("Settings control cannot scroll fully into view: " + control.GetType().Name + " " + control.Name);
+            var bounds = PixelBounds(control, settings.Viewport);
+            var area = PixelBounds(settings.Viewport, settings.Viewport);
+            if (!FitsLayout(bounds, area)) throw new Exception($"Settings control cannot scroll fully into view: {Describe(control)} {bounds} outside {area}; parents: {ParentChain(control)}");
             CheckLayout(settings);
         }
         settings.Viewport.ScrollToHome(); settings.UpdateLayout();
@@ -589,11 +618,35 @@ internal static class SmokeTest
         root.UpdateLayout();
         root.Dispatcher.Invoke(DispatcherPriority.ContextIdle, new Action(root.UpdateLayout));
     }
+    static Rect PixelBounds(FrameworkElement element, FrameworkElement root)
+    {
+        var bounds = new Rect(element.RenderSize);
+        if (element != root) bounds = element.TransformToAncestor(root).TransformBounds(bounds);
+        var dpi = VisualTreeHelper.GetDpi(root);
+        bounds.Scale(dpi.DpiScaleX, dpi.DpiScaleY);
+        return bounds;
+    }
+    // Compare device pixels after layout/DPI transforms, allowing only half a pixel of rounding.
+    static bool FitsLayout(Rect bounds, Rect area) =>
+        bounds.Left >= area.Left - .500001 && bounds.Top >= area.Top - .500001 &&
+        bounds.Right <= area.Right + .500001 && bounds.Bottom <= area.Bottom + .500001;
+    static string Describe(FrameworkElement element)
+    {
+        string text = element is TextBlock block ? block.Text : element is ContentControl control ? control.Content?.ToString() ?? "" : "";
+        return $"{element.GetType().Name} Name='{element.Name}' Text='{text.ReplaceLineEndings(" ")}'";
+    }
+    static string ParentChain(FrameworkElement element)
+    {
+        var chain = new List<string>();
+        for (DependencyObject? current = element; current != null; current = VisualTreeHelper.GetParent(current))
+            if (current is FrameworkElement item) chain.Add(Describe(item));
+        return string.Join(" <- ", chain);
+    }
     static void CheckLayout(FrameworkElement root)
     {
         FlushLayout(root);
         Visit(root);
-        static void Visit(DependencyObject parent)
+        void Visit(DependencyObject parent)
         {
             var children = Enumerable.Range(0, VisualTreeHelper.GetChildrenCount(parent)).Select(i => VisualTreeHelper.GetChild(parent, i)).ToArray();
             foreach (var child in children)
@@ -601,11 +654,11 @@ internal static class SmokeTest
                 if (child is FrameworkElement element && !element.IsVisible) continue;
                 if (parent is FrameworkElement container && child is FrameworkElement item && item.ActualWidth > 0 && item.ActualHeight > 0)
                 {
-                    var bounds = item.TransformToAncestor(container).TransformBounds(new Rect(item.RenderSize));
-                    var area = new Rect(container.RenderSize); area.Inflate(1, 1);
+                    var bounds = PixelBounds(item, root);
+                    var area = PixelBounds(container, root);
                     // The scroll presenter owns a canvas larger than its viewport; inspect that canvas recursively.
-                    if (container is not ScrollContentPresenter && !area.Contains(bounds))
-                        throw new Exception($"Control clipped in {container.GetType().Name} {container.Name}: {item.GetType().Name} {item.Name} {bounds} outside {area}");
+                    if (container is not ScrollContentPresenter && !FitsLayout(bounds, area))
+                        throw new Exception($"Control clipped: {Describe(item)} {bounds} outside {Describe(container)} {area} (device pixels, tolerance 0.5); parents: {ParentChain(item)}");
                 }
                 Visit(child);
             }
@@ -614,23 +667,66 @@ internal static class SmokeTest
             for (int i = 0; i < siblings.Length; i++)
             for (int j = i + 1; j < siblings.Length; j++)
             {
-                var a = siblings[i].TransformToAncestor(panel).TransformBounds(new Rect(siblings[i].RenderSize));
-                var b = siblings[j].TransformToAncestor(panel).TransformBounds(new Rect(siblings[j].RenderSize));
-                a.Intersect(b);
-                if (!a.IsEmpty && a.Width > 1 && a.Height > 1)
-                    throw new Exception($"Sibling controls overlap: {siblings[i].GetType().Name} {siblings[i].Name} / {siblings[j].GetType().Name} {siblings[j].Name} in {panel.GetType().Name}");
+                var overlap = PixelBounds(siblings[i], root);
+                overlap.Intersect(PixelBounds(siblings[j], root));
+                if (!overlap.IsEmpty && overlap.Width > .500001 && overlap.Height > .500001)
+                    throw new Exception($"Sibling controls overlap: {Describe(siblings[i])} / {Describe(siblings[j])}, {overlap} (device pixels); parents: {ParentChain(siblings[i])}");
             }
         }
     }
-    static void CaptureWindow(Window window, string path)
+    static void RecordLayout(Dictionary<string, List<string>> failures, string surface, Action check)
     {
-        CheckLayout(window);
-        var content = (FrameworkElement)window.Content;
-        var dpi = VisualTreeHelper.GetDpi(window);
-        var bitmap = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(content.ActualWidth * dpi.DpiScaleX)), Math.Max(1, (int)Math.Ceiling(content.ActualHeight * dpi.DpiScaleY)), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
-        bitmap.Render(content);
-        var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
-        using var output = File.Create(path); encoder.Save(output);
+        try { check(); }
+        catch (Exception ex)
+        {
+            if (!failures.TryGetValue(surface, out var errors)) failures[surface] = errors = [];
+            errors.Add(ex.ToString());
+        }
+    }
+    static void CaptureWindow(Window window, string path, Dictionary<string, List<string>> failures, string? surface = null)
+    {
+        surface ??= Path.GetFileName(path);
+        RecordLayout(failures, surface, () => CheckLayout(window));
+        RecordLayout(failures, surface + "/screenshot", () =>
+        {
+            var content = (FrameworkElement)window.Content;
+            var dpi = VisualTreeHelper.GetDpi(window);
+            var area = new Rect(content.RenderSize);
+            var visual = new DrawingVisual();
+            using (var drawing = visual.RenderOpen())
+            {
+                drawing.DrawRectangle(window.Background, null, area);
+                drawing.DrawRectangle(new VisualBrush(content) { Stretch = Stretch.Fill }, null, area);
+            }
+            var bitmap = new RenderTargetBitmap(Math.Max(1, (int)Math.Ceiling(area.Width * dpi.DpiScaleX)), Math.Max(1, (int)Math.Ceiling(area.Height * dpi.DpiScaleY)), dpi.PixelsPerInchX, dpi.PixelsPerInchY, PixelFormats.Pbgra32);
+            bitmap.Render(visual);
+            var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(bitmap));
+            using var output = File.Create(path); encoder.Save(output);
+        });
+    }
+    static void CheckLayoutDiagnostics()
+    {
+        var area = new Rect(0, 0, 16, 18);
+        if (!FitsLayout(new Rect(-.5, -.5, 17, 19), area) || FitsLayout(new Rect(0, 0, 17, 18), area) ||
+            FitsLayout(new Rect(-.51, 0, 16, 18), area) || FitsLayout(new Rect(0, -.51, 16, 18), area) || FitsLayout(new Rect(0, 0, 16, 18.51), area))
+            throw new Exception("Layout tolerance must allow half a pixel and reject real clipping");
+        var failures = new Dictionary<string, List<string>>(); int continued = 0;
+        RecordLayout(failures, "main", () => throw new Exception("injected layout failure"));
+        RecordLayout(failures, "settings", () => continued++);
+        if (failures["main"].Count != 1 || continued != 1) throw new Exception("Layout failures must not abort later surfaces");
+        var model = new MainViewModel { Mode = "desktop", CameraAvailable = false };
+        if (model.StatusTone != "Ready") throw new Exception("Desktop-only mode must ignore camera availability");
+        foreach (string mode in new[] { "camera", "both" })
+        {
+            model.Mode = mode;
+            if (model.StatusTone != "Warning") throw new Exception("Camera modes must warn when camera is unavailable");
+        }
+        model.IsBusy = true;
+        if (model.StatusTone != "Busy") throw new Exception("Busy status tone lost");
+        model.IsRecording = true;
+        if (model.StatusTone != "Recording") throw new Exception("Recording status must take priority");
+        model.IsRecording = model.IsBusy = false; model.Mode = "desktop"; model.HasWarning = true;
+        if (model.StatusTone != "Warning") throw new Exception("Non-camera errors must still warn in desktop mode");
     }
     static IEnumerable<FrameworkElement> Descendants(DependencyObject parent)
     {

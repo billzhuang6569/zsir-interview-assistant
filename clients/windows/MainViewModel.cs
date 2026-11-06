@@ -8,7 +8,7 @@ internal sealed class MainViewModel : INotifyPropertyChanged
 {
     public event PropertyChangedEventHandler? PropertyChanged;
     string phase = "准备就绪", detail = "桌面 + 系统声音 · 素材仅保存在本机", timecode = "00:00:00", mode = "desktop", previewState = "等待预览", cameraMessage = "等待预览";
-    bool recording, busy, stealth = true, previewVisible = true, hasTimecode, cameraAvailable = true, canChange = true, canStart;
+    bool hasWarning, recording, busy, stealth = true, previewVisible = true, hasTimecode, cameraAvailable = true, canChange = true, canStart;
     BitmapSource? cameraImage, desktopImage;
     double micLevel;
     public string Phase { get => phase; internal set { phase = value; Changed(); } }
@@ -28,6 +28,8 @@ internal sealed class MainViewModel : INotifyPropertyChanged
     public BitmapSource? CameraImage { get => cameraImage; internal set { cameraImage = value; Changed(); } }
     public BitmapSource? DesktopImage { get => desktopImage; internal set { desktopImage = value; Changed(); } }
     public double MicLevel { get => micLevel; internal set { micLevel = value; Changed(); } }
+    public bool HasWarning { get => hasWarning; internal set { hasWarning = value; Changed(); } }
+    public string StatusTone => IsRecording ? "Recording" : IsBusy ? "Busy" : HasWarning || IncludesCamera && !CameraAvailable ? "Warning" : "Ready";
     public bool CameraRetry => CameraMessage == "未检测到摄像头";
     public bool IncludesCamera => Mode is "camera" or "both";
     public bool IncludesDesktop => Mode is "desktop" or "both";
