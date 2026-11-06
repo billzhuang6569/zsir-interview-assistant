@@ -9,6 +9,8 @@ This package contains separate ffmpeg.exe and ffprobe.exe programs, built by thi
 
 The build enables Windows system MediaFoundation hardware-only H.264 probing and Desktop Duplication (D3D11). Actual device initialization and short encoding tests determine runtime capability; enabled names alone do not prove hardware support. Multi-display layouts retain GDI until DXGI mapping is accepted.
 
+Starting with 0.5.0, the tools also include the DirectShow (`dshow`) input device and MJPEG (`mjpeg`) decoder and parser for camera capture. Network protocols remain disabled.
+
 The combined FFmpeg/x264 executables are GPLv2-or-later. Their licenses accompany the binaries as FFmpeg-LICENSE.txt and x264-LICENSE.txt; upstream source archives contain their copyright notices. The application's MIT license does not replace these licenses. The application communicates with these separate executables through command-line arguments and pipes.
 
 TOOLS-SHA256SUMS.txt records the exact shipped binaries. The Release's SHA256SUMS.txt covers the source bundle and installation archives. Extract the source bundle and run script/build-windows-tools.sh to rebuild; sources and checksums are included and the script applies the select-filter command patch. Only constant `expr 0`/`expr 1` commands are accepted, to stop/resume preview frames before scaling/JPEG. The main video branch stays connected. Runtime support from GCC is covered by its Runtime Library Exception; compiler/toolchain components are not redistributed here.
