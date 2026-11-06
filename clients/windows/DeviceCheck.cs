@@ -65,6 +65,8 @@ internal static class DeviceCheck
             catch (Exception ex) { errors.Add("摄像头采集：" + ex.Message); }
         }
         report["errors"] = errors; report["finishedAt"] = DateTimeOffset.UtcNow;
-        await File.WriteAllTextAsync(Path.Combine(directory, "devices.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true }));
+        await File.WriteAllTextAsync(Path.Combine(directory, "devices.json"), JsonSerializer.Serialize(report, new JsonSerializerOptions {
+            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping, WriteIndented = true
+        }));
     }
 }

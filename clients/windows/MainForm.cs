@@ -27,7 +27,7 @@ internal sealed class MainForm : Form
     readonly TableLayoutPanel layout = Theme.Column();
     readonly Theme.PreviewTile preview = new() { Dock = DockStyle.Top };
     readonly Theme.PreviewTile cameraPreview = new() { Dock = DockStyle.Fill, Caption = "摄像头 · 话筒" };
-    readonly TableLayoutPanel previewRow = new() { Dock = DockStyle.Top, ColumnCount = 2, RowCount = 1, Margin = Padding.Empty };
+    readonly TableLayoutPanel previewRow = new() { Dock = DockStyle.Top, ColumnCount = 3, RowCount = 1, Margin = new Padding(0, 4, 0, 12) };
     readonly List<Theme.SegmentButton> modeButtons = [];
     IdlePreview? idleCamera;
     string idleCameraId = "";
@@ -115,10 +115,12 @@ internal sealed class MainForm : Form
         fold.Click += (_, _) => TogglePreview();
         previewState.Font = Theme.Font(8); previewState.Anchor = AnchorStyles.Right;
         var disclosure = Theme.Row(0, fold, previewState); fold.Anchor = AnchorStyles.Left;
-        previewRow.ColumnStyles.Add(new(SizeType.Percent, 50)); previewRow.ColumnStyles.Add(new(SizeType.Percent, 50));
-        previewRow.Controls.Add(cameraPreview, 0, 0); previewRow.Controls.Add(preview, 1, 0);
+        previewRow.ColumnStyles.Add(new(SizeType.Percent, 50));
+        previewRow.ColumnStyles.Add(new(SizeType.Absolute, 0));
+        previewRow.ColumnStyles.Add(new(SizeType.Percent, 50));
+        previewRow.Controls.Add(cameraPreview, 0, 0); previewRow.Controls.Add(preview, 2, 0);
         preview.Dock = DockStyle.Fill;
-        preview.Margin = new Padding(0, 4, 0, 12);
+        cameraPreview.Margin = preview.Margin = Padding.Empty;
         settingsButton = Theme.IconButton("\uE713", "录制设置", tips);
         settingsButton.Click += (_, _) => ShowRecordingSettings();
         var open = Theme.IconButton("\uE8B7", "打开素材目录", tips);
@@ -376,7 +378,8 @@ internal sealed class MainForm : Form
             previewRow.Visible = previewVisible;
             cameraPreview.Visible = options.IncludesCamera; preview.Visible = options.IncludesDesktop;
             previewRow.ColumnStyles[0].Width = options.Mode == "both" ? 50 : options.IncludesCamera ? 100 : 0;
-            previewRow.ColumnStyles[1].Width = 100 - previewRow.ColumnStyles[0].Width;
+            previewRow.ColumnStyles[1].Width = options.Mode == "both" ? U(8) : 0;
+            previewRow.ColumnStyles[2].Width = 100 - previewRow.ColumnStyles[0].Width;
             cameraPreview.Invalidate();
             preview.Caption = options.SystemAudio ? "桌面 · 系统声音" : "桌面 · 无声音";
             preview.Invalidate();

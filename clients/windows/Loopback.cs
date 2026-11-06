@@ -75,10 +75,14 @@ internal sealed class Loopback
         thread.Start();
         return started.Task;
     }
+    internal void RequestStop(double boundaryQpc)
+    {
+        if (!stopping) { stopQpc = boundaryQpc; stopping = true; }
+    }
     public async Task StopAsync()
     {
         if (!requested) return;
-        if (!stopping) { stopQpc = Clock.Qpc; stopping = true; }
+        RequestStop(Clock.Qpc);
         try { await completed.Task.WaitAsync(TimeSpan.FromSeconds(10)); }
         catch (TimeoutException)
         {

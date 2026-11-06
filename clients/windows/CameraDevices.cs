@@ -15,6 +15,7 @@ internal static class CameraDevices
     internal const string NoCamera = "未检测到摄像头，请连接摄像头后点击重新检测";
     internal static bool SmokeTestEnabled { get; set; }
     internal static bool Fake => SmokeTestEnabled && Environment.GetEnvironmentVariable("ZSIR_FAKE_CAMERA") == "1";
+    // Match payloads without depending on FFmpeg log prefixes (dshow, in#0, or none).
     internal static List<CameraDevice> ParseDevices(string text)
     {
         var devices = new List<CameraDevice>();
@@ -83,7 +84,9 @@ internal static class CameraDevices
             ?? throw new InvalidOperationException("所选摄像头已断开，请连接原摄像头或在设置中重新选择");
     }
     internal static string[] Input(CameraDevice device, CameraFormat format) => Fake && device.Id == "zsir-fake-camera"
-        ? ["-re", "-f", "lavfi", "-use_wallclock_as_timestamps", "1", "-i", "color=c=0x204060:size=1280x720:rate=30"]
+        // Keep native pacing and a fixed Unix epoch; zero burst selects FFmpeg's 0.5 s default.
+        ? ["-re", "-readrate_initial_burst", "0.001", "-readrate_catchup", "1", "-f", "lavfi", "-i",
+            "color=c=0x204060:size=1280x720:rate=30,setpts=PTS+ceil(RTCSTART/(TB*1000000))"]
         : ["-f", "dshow", "-rtbufsize", "512M", "-use_wallclock_as_timestamps", "1",
             ..(format.Vcodec != null ? new[] { "-vcodec", format.Vcodec } : new[] { "-pixel_format", format.PixelFormat! }),
             "-video_size", $"{format.Width}x{format.Height}", "-framerate", format.Fps.ToString(CultureInfo.InvariantCulture), "-i", "video=" + device.Id];
