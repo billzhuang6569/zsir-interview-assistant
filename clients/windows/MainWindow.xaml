@@ -97,7 +97,7 @@
             </TextBlock>
           </Border>
         </Grid>
-        <TextBlock Text="{Binding Detail}" FontSize="12" Foreground="{StaticResource Muted}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" LineHeight="17.4" MaxHeight="34.8"/>
+        <TextBlock Text="{Binding Detail}" FontSize="12" Foreground="{StaticResource Muted}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" LineHeight="18" MaxHeight="36" LineStackingStrategy="BlockLineHeight"/>
       </StackPanel>
       <Grid Margin="0,0,0,12" Visibility="{Binding HasTimecode, Converter={StaticResource Visible}}">
         <Grid.ColumnDefinitions>

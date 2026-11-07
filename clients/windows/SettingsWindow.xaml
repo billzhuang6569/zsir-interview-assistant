@@ -158,7 +158,7 @@
               </Grid.ColumnDefinitions>
               <StackPanel Margin="0,0,10,0">
                 <TextBlock Foreground="{StaticResource Ink}" Text="在录屏里隐身" FontSize="12.5"/>
-                <TextBlock Text="开启：录制画面、远程协助和会议共享都看不到小窗。关闭：远程协助可以看到并操作小窗，但小窗也会被录进桌面画面。" Style="{StaticResource Hint}" LineHeight="17.25" Margin="0,3,0,0"/>
+                <TextBlock Text="开启：录制画面、远程协助和会议共享都看不到小窗。关闭：远程协助可以看到并操作小窗，但小窗也会被录进桌面画面。" Style="{StaticResource Hint}" LineHeight="18" LineStackingStrategy="BlockLineHeight" Margin="0,3,0,0"/>
               </StackPanel>
               <ToggleButton x:Name="Stealth" Grid.Column="1" Style="{StaticResource Switch}" VerticalAlignment="Center" Checked="StealthChanged" Unchecked="StealthChanged" AutomationProperties.Name="在录屏里隐身"/>
             </Grid>
