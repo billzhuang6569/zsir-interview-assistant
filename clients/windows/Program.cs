@@ -1,3 +1,5 @@
+using System.Windows;
+
 namespace ZSirCapture;
 
 internal static class Program
@@ -5,7 +7,6 @@ internal static class Program
     [STAThread]
     static void Main(string[] args)
     {
-        ApplicationConfiguration.Initialize();
         if (args.Length == 1 && args[0] == "--check-settings") {
             if (RecordingOptions.BitRate("standard", 1920, 1080) != 12_000_000 ||
                 RecordingOptions.BitRate("high", 3840, 2160) != 72_000_000 ||
@@ -28,12 +29,17 @@ internal static class Program
             return;
         }
         CameraDevices.SmokeTestEnabled = args.Length == 2 && args[0] == "--smoke-test";
-        var form = new MainForm(tools, args.Length == 2 && args[0] == "--smoke-test");
+        var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+        app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/ZSirCapture.Windows;component/Theme.xaml", UriKind.Relative) });
+        var form = new MainWindow(tools, args.Length == 2 && args[0] == "--smoke-test");
+        app.MainWindow = form;
         if (args.Length == 2 && args[0] == "--smoke-test")
         {
-            form.Automation = true;
-            form.Shown += async (_, _) => await SmokeTest.RunAsync(form, tools, args[1]);
+            form.Controller.Automation = true;
+            EventHandler? startSmoke = null;
+            startSmoke = async (_, _) => { form.ContentRendered -= startSmoke; await SmokeTest.RunAsync(form, tools, args[1]); };
+            form.ContentRendered += startSmoke;
         }
-        Application.Run(form);
+        app.Run(form);
     }
 }
