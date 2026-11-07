@@ -112,8 +112,8 @@
                 <ColumnDefinition Width="40"/>
               </Grid.ColumnDefinitions>
               <StackPanel Margin="0,0,10,0">
-                <TextBlock Foreground="{StaticResource Ink}" Text="同时录下电脑播放的声音" FontSize="12.5"/>
-                <TextBlock Text="默认跟随系统播放设备" Style="{StaticResource Hint}" Margin="0,3,0,0"/>
+                <TextBlock Foreground="{StaticResource Ink}" Text="同时录下电脑播放的声音" FontSize="12.5" LineHeight="16" LineStackingStrategy="BlockLineHeight"/>
+                <TextBlock Text="默认跟随系统播放设备" Style="{StaticResource Hint}" Margin="0,4,0,0"/>
               </StackPanel>
               <ToggleButton x:Name="CaptureAudio" Grid.Column="1" Style="{StaticResource Switch}" VerticalAlignment="Center" Checked="SystemAudioChanged" Unchecked="SystemAudioChanged" AutomationProperties.Name="同时录下电脑播放的声音"/>
             </Grid>
@@ -157,8 +157,8 @@
                 <ColumnDefinition Width="40"/>
               </Grid.ColumnDefinitions>
               <StackPanel Margin="0,0,10,0">
-                <TextBlock Foreground="{StaticResource Ink}" Text="在录屏里隐身" FontSize="12.5"/>
-                <TextBlock Text="开启：录制画面、远程协助和会议共享都看不到小窗。关闭：远程协助可以看到并操作小窗，但小窗也会被录进桌面画面。" Style="{StaticResource Hint}" LineHeight="18" LineStackingStrategy="BlockLineHeight" Margin="0,3,0,0"/>
+                <TextBlock Foreground="{StaticResource Ink}" Text="在录屏里隐身" FontSize="12.5" LineHeight="16" LineStackingStrategy="BlockLineHeight"/>
+                <TextBlock Text="开启：录制画面、远程协助和会议共享都看不到小窗。关闭：远程协助可以看到并操作小窗，但小窗也会被录进桌面画面。" Style="{StaticResource Hint}" LineHeight="18" LineStackingStrategy="BlockLineHeight" Margin="0,4,0,0"/>
               </StackPanel>
               <ToggleButton x:Name="Stealth" Grid.Column="1" Style="{StaticResource Switch}" VerticalAlignment="Center" Checked="StealthChanged" Unchecked="StealthChanged" AutomationProperties.Name="在录屏里隐身"/>
             </Grid>
@@ -169,8 +169,8 @@
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
               <StackPanel Margin="0,0,12,0">
-                <TextBlock Foreground="{StaticResource Ink}" Text="保存位置" FontSize="12.5"/>
-                <TextBlock x:Name="AdvancedPath" Style="{StaticResource Hint}" Margin="0,3,0,0" TextWrapping="Wrap"/>
+                <TextBlock Foreground="{StaticResource Ink}" Text="保存位置" FontSize="12.5" LineHeight="16" LineStackingStrategy="BlockLineHeight"/>
+                <TextBlock x:Name="AdvancedPath" Style="{StaticResource Hint}" LineHeight="18" LineStackingStrategy="BlockLineHeight" Margin="0,4,0,0" TextWrapping="Wrap"/>
               </StackPanel>
               <Button Grid.Column="1" Content="更改…" Background="{StaticResource Field}" BorderBrush="{StaticResource FieldStroke}" VerticalAlignment="Center" Click="ChangeFolderClick"/>
             </Grid>
@@ -181,8 +181,8 @@
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
               <StackPanel Margin="0,0,12,0">
-                <TextBlock Foreground="{StaticResource Ink}" Text="重新检测设备" FontSize="12.5"/>
-                <TextBlock Text="插拔摄像头、话筒或显示器后使用" Style="{StaticResource Hint}" Margin="0,3,0,0"/>
+                <TextBlock Foreground="{StaticResource Ink}" Text="重新检测设备" FontSize="12.5" LineHeight="16" LineStackingStrategy="BlockLineHeight"/>
+                <TextBlock Text="插拔摄像头、话筒或显示器后使用" Style="{StaticResource Hint}" Margin="0,4,0,0"/>
               </StackPanel>
               <Button Grid.Column="1" Content="检测" Background="{StaticResource Field}" BorderBrush="{StaticResource FieldStroke}" VerticalAlignment="Center" Click="DetectClick"/>
             </Grid>
@@ -193,8 +193,8 @@
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
               <StackPanel Margin="0,0,12,0">
-                <TextBlock Foreground="{StaticResource Ink}" Text="异常中断恢复" FontSize="12.5"/>
-                <TextBlock Text="为未完成的素材生成副本，原文件保留" Style="{StaticResource Hint}" Margin="0,3,0,0"/>
+                <TextBlock Foreground="{StaticResource Ink}" Text="异常中断恢复" FontSize="12.5" LineHeight="16" LineStackingStrategy="BlockLineHeight"/>
+                <TextBlock Text="为未完成的素材生成副本，原文件保留" Style="{StaticResource Hint}" Margin="0,4,0,0"/>
               </StackPanel>
               <Button Grid.Column="1" Content="扫描" Background="{StaticResource Field}" BorderBrush="{StaticResource FieldStroke}" VerticalAlignment="Center" Click="RecoverClick"/>
             </Grid>
