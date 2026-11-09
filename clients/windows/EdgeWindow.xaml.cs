@@ -48,10 +48,8 @@ public partial class EdgeWindow : Window
     }
     void Place()
     {
-        var area = Screen.FromHandle(main.Handle).WorkingArea;
-        var transform = HwndSource.FromHwnd(Handle)?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
-        var topLeft = transform.Transform(new Point(area.Left, area.Top)); var bottomRight = transform.Transform(new Point(area.Right, area.Bottom));
-        Left = bottomRight.X - Width; Top = Math.Clamp(main.Top + main.ActualHeight / 2 - Height / 2, topLeft.Y, bottomRight.Y - Height);
+        var area = ScreenGeometry.ToDip(Screen.FromHandle(main.Handle).WorkingArea, ScreenGeometry.ScaleForWindow(Handle));
+        Left = area.Right - Width; Top = Math.Clamp(main.Top + main.ActualHeight / 2 - Height / 2, area.Top, area.Bottom - Height);
     }
     void UpdateMotion()
     {
@@ -67,11 +65,8 @@ public partial class EdgeWindow : Window
     {
         ResetIdle(); if (!IsDocked) return;
         IsDocked = false; animation.Stop(); Hide();
-        var area = Screen.FromHandle(main.Handle).WorkingArea;
-        var transform = HwndSource.FromHwnd(main.Handle)?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
-        var a = transform.Transform(new Point(area.Left, area.Top)); var b = transform.Transform(new Point(area.Right, area.Bottom));
-        main.Left = Math.Clamp(main.Left, a.X, Math.Max(a.X, b.X - main.ActualWidth));
-        main.Top = Math.Clamp(main.Top, a.Y, Math.Max(a.Y, b.Y - main.ActualHeight));
+        var position = ScreenGeometry.Clamp(main.Left, main.Top, main.ActualWidth, main.ActualHeight, ScreenGeometry.WorkingArea(main.Handle));
+        main.Left = position.X; main.Top = position.Y;
         main.Show(); if (activate) main.Activate();
     }
     internal IDisposable ScaleForLayoutTest(double factor) => SmokeTest.ScaleForLayoutTest(this, factor);

@@ -50,9 +50,8 @@ public partial class SettingsWindow : Window
     }
     void FitWindow()
     {
-        var area = Screen.FromHandle(Handle).WorkingArea;
-        var transform = source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
-        MaxHeight = Math.Max(200, transform.Transform(new System.Windows.Point(0, area.Height)).Y - 32);
+        var area = ScreenGeometry.WorkingArea(Handle);
+        MaxHeight = Math.Max(200, area.Height - 32);
         UpdateLayout();
     }
     void Change(Action change)

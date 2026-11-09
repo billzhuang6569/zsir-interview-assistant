@@ -7,6 +7,7 @@ internal static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => LogCrash(e.ExceptionObject);
         if (args.Length == 1 && args[0] == "--check-settings") {
             if (RecordingOptions.BitRate("standard", 1920, 1080) != 12_000_000 ||
                 RecordingOptions.BitRate("high", 3840, 2160) != 72_000_000 ||
@@ -30,6 +31,12 @@ internal static class Program
         }
         CameraDevices.SmokeTestEnabled = args.Length == 2 && args[0] == "--smoke-test";
         var app = new Application { ShutdownMode = ShutdownMode.OnMainWindowClose };
+        app.DispatcherUnhandledException += (_, e) =>
+        {
+            string path = LogCrash(e.Exception);
+            e.Handled = false;
+            if (!args.Contains("--smoke-test")) MessageBox.Show($"庄Sir采访录制助手遇到错误，详情已写入 {path}", "庄Sir采访录制助手", MessageBoxButton.OK, MessageBoxImage.Error);
+        };
         app.Resources.MergedDictionaries.Add(new ResourceDictionary { Source = new Uri("/ZSirCapture.Windows;component/Theme.xaml", UriKind.Relative) });
         var form = new MainWindow(tools, args.Length == 2 && args[0] == "--smoke-test");
         app.MainWindow = form;
@@ -41,5 +48,17 @@ internal static class Program
             form.ContentRendered += startSmoke;
         }
         app.Run(form);
+    }
+    static string LogCrash(object exception)
+    {
+        string path = @"%LOCALAPPDATA%\ZSirCapture\crash.log";
+        try
+        {
+            path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ZSirCapture", "crash.log");
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.AppendAllText(path, $"{DateTimeOffset.Now:O} version {typeof(Program).Assembly.GetName().Version}{Environment.NewLine}{exception}{Environment.NewLine}");
+        }
+        catch { }
+        return path;
     }
 }
