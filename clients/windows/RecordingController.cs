@@ -351,8 +351,8 @@ internal sealed class RecordingController : IDisposable
     public void ApplyCaptureVisibility()
     {
         excluded = host.ApplyCaptureVisibility(StealthInCapture); ViewModel.Stealth = StealthInCapture; SyncControls();
-        if (StealthInCapture && !excluded) { ViewModel.Phase = "素材需要检查"; ViewModel.Detail = "请使用 Windows 10 2004 或更新版本"; }
-        else if (ViewModel.Detail == "请使用 Windows 10 2004 或更新版本") { ViewModel.Phase = "准备就绪"; ViewModel.Detail = ModeDetail(); }
+        if (StealthInCapture && !excluded) { ViewModel.Phase = "素材需要检查"; ViewModel.Detail = "小窗未能隐藏，请关闭「在录屏里隐身」后重试，或反馈此问题"; }
+        else if (ViewModel.Detail == "小窗未能隐藏，请关闭「在录屏里隐身」后重试，或反馈此问题") { ViewModel.Phase = "准备就绪"; ViewModel.Detail = ModeDetail(); }
     }
     public void HandleSystemMessage(int message, IntPtr parameter)
     {
