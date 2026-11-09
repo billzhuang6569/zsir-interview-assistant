@@ -123,6 +123,13 @@ jobs:
           mkdir -p validation-logs
           dotnet build clients/windows/ZSirCapture.Windows.csproj -p:EnableWindowsTargeting=true --nologo 2>&1 | tee validation-logs/windows-build.log
           dotnet build script/tests/RecordingOptionsChecks/RecordingOptionsChecks.csproj --nologo 2>&1 | tee validation-logs/options-build.log
+      - name: Upload compiled Windows app assembly for on-device checks
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-app-assembly-${{ github.sha }}
+          path: clients/windows/bin/**/ZSirCapture.Windows.dll
+          if-no-files-found: error
+          retention-days: 7
       - name: Upload Windows compile logs
         if: always()
         uses: actions/upload-artifact@v4

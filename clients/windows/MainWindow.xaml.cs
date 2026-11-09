@@ -1,3 +1,4 @@
+using Microsoft.Win32;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
@@ -18,7 +19,7 @@ public partial class MainWindow : Window, IRecordingHost
     SettingsWindow? settings;
     readonly TrayMenu tray;
     HwndSource? source;
-    bool animating, placed;
+    bool animating, placed, dragging, clampPending, closed;
     internal IntPtr Handle => new WindowInteropHelper(this).Handle;
     bool IRecordingHost.IsEnabled => IsEnabled && settings == null;
     bool IRecordingHost.IsMinimized => WindowState == WindowState.Minimized;
@@ -38,6 +39,8 @@ public partial class MainWindow : Window, IRecordingHost
             Controller.ApplyCaptureVisibility();
         };
         Loaded += (_, _) => { if (!placed) { PlaceInitial(); placed = true; } UpdateDesktopCaption(); Controller.VisibilityChanged(); };
+        DpiChanged += (_, _) => QueueClamp();
+        SystemEvents.DisplaySettingsChanged += DisplaySettingsChanged;
         IsVisibleChanged += (_, _) => Controller.VisibilityChanged();
         StateChanged += (_, _) => Controller.VisibilityChanged();
         IsEnabledChanged += (_, _) => Controller.VisibilityChanged();
@@ -46,21 +49,33 @@ public partial class MainWindow : Window, IRecordingHost
         PreviewMouseWheel += (_, _) => Edge.ResetIdle();
         PreviewKeyDown += (_, _) => Edge.ResetIdle();
         Closing += OnClosing;
-        Closed += (_, _) => { source?.RemoveHook(WindowMessage); tray.Dispose(); Edge.Close(); Controller.Dispose(); };
+        Closed += (_, _) => { closed = true; SystemEvents.DisplaySettingsChanged -= DisplaySettingsChanged; source?.RemoveHook(WindowMessage); tray.Dispose(); Edge.Close(); Controller.Dispose(); };
         Root.SizeChanged += AnimateHeight;
     }
     void PlaceInitial()
     {
-        var area = Screen.FromHandle(Handle).WorkingArea;
-        var transform = source?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
-        var topRight = transform.Transform(new Point(area.Right, area.Top));
-        Left = topRight.X - ActualWidth - 16; Top = topRight.Y + 16;
+        var area = ScreenGeometry.WorkingArea(Handle);
+        Left = area.Right - ActualWidth - 16; Top = area.Top + 16;
     }
+    void ClampToWorkingArea()
+    {
+        if (!IsLoaded || closed || Edge.IsDocked) return;
+        if (dragging) { clampPending = true; return; }
+        var position = ScreenGeometry.Clamp(Left, Top, ActualWidth, ActualHeight, ScreenGeometry.WorkingArea(Handle));
+        Left = position.X; Top = position.Y;
+    }
+    void QueueClamp() => Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(ClampToWorkingArea));
+    void DisplaySettingsChanged(object? sender, EventArgs e) => QueueClamp();
     void DragEmptyArea(object sender, MouseButtonEventArgs e)
     {
         for (DependencyObject? current = e.OriginalSource as DependencyObject; current != null && current != Root; current = current is Visual ? VisualTreeHelper.GetParent(current) : LogicalTreeHelper.GetParent(current))
             if (current is ButtonBase or ComboBox) return;
-        if (e.ButtonState == MouseButtonState.Pressed) DragMove();
+        if (e.ButtonState == MouseButtonState.Pressed)
+        {
+            dragging = true;
+            try { DragMove(); }
+            finally { dragging = false; if (clampPending) { clampPending = false; QueueClamp(); } }
+        }
     }
     void AnimateHeight(object sender, SizeChangedEventArgs e)
     {
@@ -126,6 +141,7 @@ public partial class MainWindow : Window, IRecordingHost
         Edge?.Reveal(activate);
         if (!IsLoaded) return;
         Show(); if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        ClampToWorkingArea();
         if (activate) Activate();
     }
     void IRecordingHost.ResetIdle() => Edge.ResetIdle();

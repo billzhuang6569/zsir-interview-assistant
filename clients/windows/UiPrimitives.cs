@@ -24,6 +24,21 @@ public sealed class AspectBorder : Border
     }
 }
 
+internal static class ScreenGeometry
+{
+    internal static double ScaleForWindow(IntPtr handle)
+    {
+        uint dpi = GetDpiForWindow(handle);
+        return dpi == 0 ? 1.0 : dpi / 96.0;
+    }
+    internal static Rect ToDip(Rectangle area, double scale) => new(area.Left / scale, area.Top / scale, area.Width / scale, area.Height / scale);
+    internal static Rect WorkingArea(IntPtr handle) => ToDip(Screen.FromHandle(handle).WorkingArea, ScaleForWindow(handle));
+    internal static Point Clamp(double left, double top, double width, double height, Rect area) => new(
+        Math.Clamp(left, area.Left, Math.Max(area.Left, area.Right - width)),
+        Math.Clamp(top, area.Top, Math.Max(area.Top, area.Bottom - height)));
+    [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr window);
+}
+
 internal static class WindowEffects
 {
     internal static bool Apply(Window window, bool mica = false)

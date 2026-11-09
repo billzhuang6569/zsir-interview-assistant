@@ -17,6 +17,8 @@ namespace ZSirCapture;
 internal static class SmokeTest
 {
     [DllImport("user32.dll")] static extern bool GetWindowDisplayAffinity(IntPtr window, out uint affinity);
+    [DllImport("user32.dll", SetLastError = true)] static extern bool GetWindowRect(IntPtr window, out NativeRect rect);
+    [StructLayout(LayoutKind.Sequential)] struct NativeRect { public int Left, Top, Right, Bottom; }
 
     public static async Task RunAsync(MainWindow window, string tools, string root)
     {
@@ -41,6 +43,7 @@ internal static class SmokeTest
         {
             await RunStageAsync("desktop", async () =>
             {
+                RecordLayout(layoutFailures, "client-onscreen", () => CheckOnscreen(window));
                 form.SetMode("desktop", persist: false);
                 CheckCameraParsers(); report["cameraParsersPassed"] = true;
                 int duration = int.TryParse(Environment.GetEnvironmentVariable("ZSIR_SMOKE_SECONDS"), out int requested) ? Math.Clamp(requested, 18, 7200) : 18;
@@ -832,8 +835,42 @@ internal static class SmokeTest
             using var output = File.Create(path); encoder.Save(output);
         });
     }
+    static void CheckOnscreen(MainWindow window)
+    {
+        var areas = Screen.AllScreens.Select(screen => screen.WorkingArea).ToArray();
+        if (!GetWindowRect(window.Handle, out var native)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "GetWindowRect failed");
+        var rect = new Rect(native.Left, native.Top, native.Right - native.Left, native.Bottom - native.Top);
+        var workingAreas = new GeometryGroup { FillRule = FillRule.Nonzero };
+        foreach (var area in areas)
+        {
+            var bounds = new Rect(area.Left, area.Top, area.Width, area.Height); bounds.Inflate(1, 1);
+            workingAreas.Children.Add(new RectangleGeometry(bounds));
+        }
+        if (!Geometry.Combine(new RectangleGeometry(rect), workingAreas, GeometryCombineMode.Exclude, null).Bounds.IsEmpty)
+            throw new Exception($"Window rect {rect} is outside working areas [{string.Join("; ", areas.Select(area => area.ToString()))}] (device pixels, tolerance 1)");
+    }
+    static void CheckScreenGeometry()
+    {
+        foreach (var (scale, width, height, left) in new[] { (1.0, 3840.0, 2040.0, 3488.0), (1.5, 2560.0, 1360.0, 2208.0), (3.0, 1280.0, 680.0, 928.0) })
+        {
+            var area = ScreenGeometry.ToDip(new Rectangle(0, 0, 3840, 2040), scale);
+            var position = new Point(area.Right - 336 - 16, area.Top + 16);
+            if (area != new Rect(0, 0, width, height) || position != new Point(left, 16))
+                throw new Exception($"Screen conversion/placement failed at scale {scale}: {area}, {position}");
+        }
+        var offset = ScreenGeometry.ToDip(new Rectangle(-3840, 120, 3840, 2040), 3);
+        if (offset != new Rect(-1280, 40, 1280, 680)) throw new Exception("Screen conversion lost monitor offset");
+        var work = new Rect(100, 50, 1280, 680);
+        if (ScreenGeometry.Clamp(5000, -100, 336, 200, work) != new Point(1044, 50) ||
+            ScreenGeometry.Clamp(-500, 5000, 336, 200, work) != new Point(100, 530) ||
+            ScreenGeometry.Clamp(500, 500, 1600, 900, work) != work.TopLeft ||
+            ScreenGeometry.Clamp(500, 5000, 1600, 200, work) != new Point(100, 530) ||
+            ScreenGeometry.Clamp(200, 100, 336, 200, work) != new Point(200, 100))
+            throw new Exception("Screen clamp failed for outside, oversized or already visible windows");
+    }
     static void CheckLayoutDiagnostics()
     {
+        CheckScreenGeometry();
         var area = new Rect(0, 0, 16, 18);
         if (!FitsLayout(new Rect(-.5, -.5, 17, 19), area) || FitsLayout(new Rect(0, 0, 17, 18), area) ||
             FitsLayout(new Rect(-.51, 0, 16, 18), area) || FitsLayout(new Rect(0, -.51, 16, 18), area) || FitsLayout(new Rect(0, 0, 16, 18.51), area))
@@ -950,10 +987,8 @@ internal static class SmokeTest
             Title = "庄Sir录制验收画面"; Topmost = true; WindowStyle = WindowStyle.None; ResizeMode = ResizeMode.NoResize; WindowStartupLocation = WindowStartupLocation.Manual;
             SourceInitialized += (_, _) =>
             {
-                var transform = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle)?.CompositionTarget?.TransformFromDevice ?? Matrix.Identity;
-                var screen = Screen.PrimaryScreen!.Bounds;
-                var origin = transform.Transform(new Point(screen.Left, screen.Top)); var size = transform.Transform(new Point(screen.Width, screen.Height));
-                Left = origin.X; Top = origin.Y; Width = size.X; Height = size.Y;
+                var screen = ScreenGeometry.ToDip(Screen.PrimaryScreen!.Bounds, ScreenGeometry.ScaleForWindow(new WindowInteropHelper(this).Handle));
+                Left = screen.Left; Top = screen.Top; Width = screen.Width; Height = screen.Height;
             };
             title = new TextBlock { Text = "庄Sir · Windows 桌面与系统声音测试", FontSize = 37, FontWeight = FontWeights.Bold, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 28) };
             subtitle = new TextBlock { Text = "测试完成后自动关闭此画面 · 不打开摄像头或话筒", FontSize = 21, TextWrapping = TextWrapping.Wrap };
