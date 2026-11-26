@@ -5,6 +5,18 @@ public struct RecordingError: LocalizedError {
     public let message: String
     public init(_ message: String) { self.message = message }
     public var errorDescription: String? { message }
+
+    public static func describe(_ error: Error) -> String {
+        if let recording = error as? RecordingError { return recording.message }
+        var current = error as NSError
+        var parts: [String] = []
+        for _ in 0..<8 {
+            parts.append("\(current.localizedDescription) [\(current.domain): \(current.code)]")
+            guard let underlying = current.userInfo[NSUnderlyingErrorKey] as? NSError else { break }
+            current = underlying
+        }
+        return parts.joined(separator: " → ")
+    }
 }
 
 /// Media methods belong to one track's serial owner queue; completion gates are thread safe.
@@ -13,6 +25,7 @@ public final class MovieWriter {
     private var epoch: CMTime
     public let videoBitRate: Int
     public let includesAudio: Bool
+    public private(set) var videoCodec = AVVideoCodecType.h264
     public let encoderPolicy = "hardware-required; no software fallback"
     private var writer: AVAssetWriter?
     private var video: AVAssetWriterInput?
@@ -143,8 +156,10 @@ public final class MovieWriter {
             // macOS 13 cannot flush the first fragment separately; keep early recovery at the cost of more fragments.
             candidate.movieFragmentInterval = CMTime(seconds: 1, preferredTimescale: 600)
         }
+        // Native 5K fails at the first H.264 append on this hardware; preserve pixels with HEVC.
+        videoCodec = width > 4096 || height > 4096 ? .hevc : .h264
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoCodecKey: videoCodec,
             AVVideoEncoderSpecificationKey: [
                 kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder as String: true
             ],
@@ -165,7 +180,7 @@ public final class MovieWriter {
         videoInput.expectsMediaDataInRealTime = true
         audioInput.expectsMediaDataInRealTime = true
         guard candidate.canAdd(videoInput), !includesAudio || candidate.canAdd(audioInput) else {
-            throw RecordingError("无法建立 H.264 / AAC 编码管线")
+            throw RecordingError("无法建立视频 / AAC 编码管线")
         }
         candidate.add(videoInput)
         if includesAudio { candidate.add(audioInput) }

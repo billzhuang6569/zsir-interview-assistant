@@ -1,0 +1,60 @@
+name: Release Windows packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      tools_tag:
+        description: Draft release containing the pinned recording tools archive
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: [x64, arm64]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TOOLS_TAG: ${{ inputs.tools_tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.428'
+      - name: Download pinned tools
+        shell: pwsh
+        run: |
+          gh release download $env:TOOLS_TAG --repo $env:GITHUB_REPOSITORY --pattern recording-tools-win-x64.zip --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { throw 'Tools download failed' }
+      - name: Build package and execute bundled media checks
+        shell: pwsh
+        run: |
+          ./script/package-windows.ps1 -Architecture '${{ matrix.architecture }}' -ToolsArchive "$env:RUNNER_TEMP/recording-tools-win-x64.zip"
+      - name: Check native Windows camera pipe and cancellation
+        if: matrix.architecture == 'x64'
+        shell: pwsh
+        run: |
+          dotnet run --project script/tests/WindowsCaptureChecks/WindowsCaptureChecks.csproj -- --pipe-only
+          if ($LASTEXITCODE -ne 0) { throw 'Native camera pipe checks failed' }
+      - name: Run x64 application checks
+        if: matrix.architecture == 'x64'
+        shell: pwsh
+        run: |
+          $version=(Get-Content VERSION -Raw).Trim()
+          $app=Join-Path $PWD "dist/release/ZSirCapture-$version-windows-x64/ZSirCapture.Windows.exe"
+          $process=Start-Process -FilePath $app -ArgumentList '--check-settings' -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw 'Application checks failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-${{ matrix.architecture }}
+          path: dist/release/*.zip
+          if-no-files-found: error
+          retention-days: 14

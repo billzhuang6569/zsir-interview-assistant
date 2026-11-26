@@ -25,8 +25,13 @@ internal static class Program
         string tools = Path.Combine(AppContext.BaseDirectory, "tools");
         if (args.Length == 2 && args[0] == "--device-check")
         {
-            try { Task.Run(() => DeviceCheck.RunAsync(tools, args[1])).GetAwaiter().GetResult(); }
-            catch (Exception ex) { MessageBox.Show(ex.Message, "设备诊断未完成"); Environment.ExitCode = 1; }
+            var diagnostics = new Application();
+            diagnostics.Startup += async (_, _) => {
+                try { await DeviceCheck.RunAsync(tools, args[1]); }
+                catch (Exception ex) { MessageBox.Show(ex.Message, "设备诊断未完成"); Environment.ExitCode = 1; }
+                finally { diagnostics.Shutdown(); }
+            };
+            diagnostics.Run();
             return;
         }
         CameraDevices.SmokeTestEnabled = args.Length == 2 && args[0] == "--smoke-test";

@@ -35,7 +35,10 @@ public partial class SettingsWindow : Window
         int profileIndex = Array.IndexOf(Profiles, options.OutputProfile); OutputSize.SelectedIndex = profileIndex >= 0 ? profileIndex : 2;
         Quality.ItemsSource = new[] { "省空间", "标准 · 推荐", "高画质" }; Quality.SelectedIndex = Math.Max(0, Array.IndexOf(Levels, options.Quality));
         CaptureAudio.IsChecked = options.SystemAudio; Audio.IsEnabled = options.SystemAudio;
-        previewTimer.Tick += (_, _) => MicLevel.Value = Math.Clamp((mic?.Peak ?? 0) * 100, 0, 100);
+        previewTimer.Tick += (_, _) => {
+            MicLevel.Value = Math.Clamp((mic?.Peak ?? 0) * 100, 0, 100);
+            if (idleCamera?.Failure != null) SetCameraState("摄像头预览中断：" + idleCamera.Failure.Message);
+        };
         controller.ControlsChanged += SyncStealth;
         SourceInitialized += (_, _) =>
         {
@@ -171,7 +174,7 @@ public partial class SettingsWindow : Window
             try
             {
                 Cameras.Items.Clear(); Cameras.Items.Add(new CameraDevice("", "第一台可用摄像头")); foreach (var device in devices) Cameras.Items.Add(device);
-                Cameras.SelectedItem = Cameras.Items.Cast<CameraDevice>().FirstOrDefault(d => d.Id == options.CameraId);
+                Cameras.SelectedItem = Cameras.Items.Cast<CameraDevice>().FirstOrDefault(d => CameraDevices.SameId(d.Id, options.CameraId));
                 if (Cameras.SelectedIndex < 0) { var missing = new CameraDevice(options.CameraId, "原摄像头已断开，请重新选择"); Cameras.Items.Add(missing); Cameras.SelectedItem = missing; }
                 Microphones.Items.Clear(); foreach (var device in CoreAudio.Devices(1)) Microphones.Items.Add(device);
                 Microphones.SelectedItem = Microphones.Items.Cast<AudioDevice>().FirstOrDefault(d => d.Id == options.MicrophoneId);

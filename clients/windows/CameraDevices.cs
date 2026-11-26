@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using Windows.Devices.Enumeration;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.Win32;
@@ -56,7 +58,7 @@ internal static class CameraDevices
     }
     internal static CameraFormat ChooseFormat(IEnumerable<CameraFormat> formats)
     {
-        var candidates = formats.Where(f => f.Width <= 1920 && f.Height <= 1080);
+        var candidates = formats.Where(f => f.Width >= 2 && f.Height >= 2 && f.Width <= 1920 && f.Height <= 1920 && Math.Min(f.Width, f.Height) <= 1080);
         int Rank(CameraFormat f) => f.Vcodec == "mjpeg" && f.Fps >= 30 && f.Width == 1920 && f.Height == 1080 ? 0 :
             f.Vcodec == "mjpeg" && f.Fps >= 30 && f.Width == 1280 && f.Height == 720 ? 1 : f.PixelFormat != null && f.Fps >= 30 ? 2 : 3;
         var best = candidates.OrderBy(Rank).ThenByDescending(f => (long)f.Width * f.Height).ThenByDescending(f => f.Fps).FirstOrDefault()
@@ -66,32 +68,39 @@ internal static class CameraDevices
     internal static async Task<List<CameraDevice>> DiscoverAsync(string tools)
     {
         if (Fake) return [new("zsir-fake-camera", "测试摄像头")];
-        var result = await new Recorder(tools).RunAsync("ffmpeg.exe", ["-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"], TimeSpan.FromSeconds(10));
-        return ParseDevices(result.Error + "\n" + result.Output);
+        try {
+            var devices = await DeviceInformation.FindAllAsync(DeviceClass.VideoCapture).AsTask().WaitAsync(TimeSpan.FromSeconds(10));
+            return devices.Select(d => new CameraDevice(d.Id, d.Name)).ToList();
+        } catch (COMException ex) { throw new IOException("无法检测共享摄像头：" + ex.Message, ex); }
     }
     internal static async Task<List<CameraFormat>> FormatsAsync(string tools, CameraDevice device)
     {
         if (Fake && device.Id == "zsir-fake-camera") return [new("mjpeg", null, 1280, 720, 30)];
-        var result = await new Recorder(tools).RunAsync("ffmpeg.exe", ["-hide_banner", "-list_options", "true", "-f", "dshow", "-i", "video=" + device.Id], TimeSpan.FromSeconds(10));
-        if (ParseFormats(result.Error).Count == 0) throw new IOException(Error(result.Error));
-        return ParseFormats(result.Error);
+        try { return [await SharedCameraInput.ReadFormatAsync(device).WaitAsync(TimeSpan.FromSeconds(10))]; }
+        catch (COMException ex) { throw new IOException("无法读取共享摄像头格式：" + ex.Message, ex); }
     }
     internal static async Task<CameraDevice> ResolveAsync(string tools, string id)
     {
         var devices = await DiscoverAsync(tools);
         if (devices.Count == 0) throw new InvalidOperationException(NoCamera);
-        return (id.Length == 0 ? devices[0] : devices.FirstOrDefault(d => d.Id == id))
+        return (id.Length == 0 ? devices[0] : devices.FirstOrDefault(d => SameId(d.Id, id)))
             ?? throw new InvalidOperationException("所选摄像头已断开，请连接原摄像头或在设置中重新选择");
     }
-    internal static string[] Input(CameraDevice device, CameraFormat format) => Fake && device.Id == "zsir-fake-camera"
+    internal static bool SameId(string a, string b)
+    {
+        string Normalize(string id) => id.StartsWith("@device_pnp_", StringComparison.OrdinalIgnoreCase) ? id[12..] : id;
+        return string.Equals(Normalize(a), Normalize(b), StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string[] Input(CameraDevice device, CameraFormat format, string? pipePath = null) => Fake && device.Id == "zsir-fake-camera"
         // Keep native pacing and a fixed Unix epoch; zero burst selects FFmpeg's 0.5 s default.
         ? ["-re", "-readrate_initial_burst", "0.001", "-readrate_catchup", "1", "-f", "lavfi", "-i",
             "color=c=0x204060:size=1280x720:rate=30,setpts=PTS+ceil(RTCSTART/(TB*1000000))"]
-        : ["-f", "dshow", "-rtbufsize", "512M", "-use_wallclock_as_timestamps", "1",
-            ..(format.Vcodec != null ? new[] { "-vcodec", format.Vcodec } : new[] { "-pixel_format", format.PixelFormat! }),
-            "-video_size", $"{format.Width}x{format.Height}", "-framerate", format.Fps.ToString(CultureInfo.InvariantCulture), "-i", "video=" + device.Id];
+        : ["-f", "rawvideo", "-pixel_format", "bgra", "-video_size", $"{format.Width}x{format.Height}",
+            "-framerate", "30", "-use_wallclock_as_timestamps", "1", "-probesize", "32", "-analyzeduration", "0",
+            "-i", pipePath ?? throw new InvalidOperationException("共享摄像头管道尚未创建")];
     internal static string Error(string log) => new[] { "Could not run graph", "I/O error", "Device or resource busy" }.Any(s => log.Contains(s, StringComparison.OrdinalIgnoreCase))
-        ? "摄像头正被其他应用（如会议软件）占用" : "无法启动摄像头，请重新检测设备并检查 Windows 隐私设置；详情见 camera-capture.log";
+        ? "摄像头正被其他应用（如会议软件）占用" : log.Contains("Unknown input format", StringComparison.OrdinalIgnoreCase) ? "录制组件不支持共享摄像头，请下载本轮配套完整工具包" : "无法启动共享摄像头，请重新检测设备并检查 Windows 隐私设置；详情见 camera-capture.log";
 }
 
 internal static class CapturePrivacy

@@ -346,6 +346,30 @@ internal static class SmokeTest
                         using (var failedReport = JsonDocument.Parse(File.ReadAllText(Path.Combine(failedCamera.Folder!, "report.json"))))
                             if (failedReport.RootElement.GetProperty("state").GetString() != "needs_review") throw new Exception("Camera failure was reported as success");
                         report["cameraFailureStopsBothAndPreservesRaw"] = true;
+                        string cameraRecoveryRoot = Path.Combine(root, "camera-recovery-check");
+                        string cameraRecoveryTake = Path.Combine(cameraRecoveryRoot, "Take-dual-fixture");
+                        Directory.CreateDirectory(cameraRecoveryTake);
+                        foreach (string file in new[] { "desktop-video.mp4", "camera-video.mp4", "system-audio.wav", "microphone.wav", "report.json", "camera-report.json" })
+                            if (File.Exists(Path.Combine(failedCamera.Folder!, file))) File.Copy(Path.Combine(failedCamera.Folder!, file), Path.Combine(cameraRecoveryTake, file));
+                        var recoveryHashes = Directory.GetFiles(cameraRecoveryTake).ToDictionary(path => path,
+                            path => Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(path))));
+                        using (var activeLease = new FileStream(Path.Combine(cameraRecoveryTake, ".recording.lock"), FileMode.CreateNew, FileAccess.ReadWrite, FileShare.None))
+                            if ((await NewRecorder(tools).RecoverUnfinishedAsync(cameraRecoveryRoot)).Length != 0) throw new Exception("Active camera take was recovered");
+                        var cameraCopies = await NewRecorder(tools).RecoverUnfinishedAsync(cameraRecoveryRoot);
+                        if (cameraCopies.Length != 2 || !cameraCopies.Select(Path.GetFileName).Order().SequenceEqual(new[] { "camera.mp4", "desktop.mp4" }))
+                            throw new Exception("Interrupted dual take must recover both tracks");
+                        foreach (string copy in cameraCopies)
+                        {
+                            var decoded = await NewRecorder(tools).RunAsync("ffmpeg.exe", ["-v", "error", "-xerror", "-i", copy, "-f", "null", "NUL"], TimeSpan.FromSeconds(30));
+                            if (decoded.Code != 0) throw new Exception("Recovered camera/desktop copy cannot decode");
+                            string track = Path.GetFileNameWithoutExtension(copy);
+                            using var recoveredReport = JsonDocument.Parse(File.ReadAllText(Path.Combine(Path.GetDirectoryName(copy)!, track + "-report.json")));
+                            if (recoveredReport.RootElement.GetProperty("audioSource").GetString() != (track == "camera" ? "microphone" : "system"))
+                                throw new Exception("Recovery mixed camera microphone and desktop system audio");
+                        }
+                        if (recoveryHashes.Any(pair => pair.Value != Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(pair.Key)))))
+                            throw new Exception("Dual recovery modified original media or reports");
+                        report["cameraAndDesktopRecoveryCopies"] = cameraCopies;
                     }
                 });
             }
@@ -441,6 +465,8 @@ internal static class SmokeTest
     internal static void CheckCameraParsers()
     {
         CheckLayoutDiagnostics();
+        if (!CameraDevices.SameId(@"@device_pnp_\\?\usb#camera", @"\\?\USB#CAMERA") ||
+            CameraDevices.SameId(@"@device_pnp_\\?\usb#one", @"\\?\usb#two")) throw new Exception("Legacy camera ID migration failed");
         const string devices = """
             [dshow @ 0000] "集成摄像头" (video)
             [dshow @ 0000]   Alternative name "@device_pnp_\\?\usb#one"

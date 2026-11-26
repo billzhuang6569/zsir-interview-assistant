@@ -25,9 +25,9 @@ $previewGate=& $ffmpeg -hide_banner -h filter=select 2>&1
 if($LASTEXITCODE -ne 0 -or ($previewGate -join "`n") -notmatch 'ZSir preview gate v1\.'){
     throw 'Bundled FFmpeg is missing the required preview production gate'
 }
-$devices=& $ffmpeg -hide_banner -devices 2>&1
-if($LASTEXITCODE -ne 0 -or ($devices -join "`n") -notmatch '(?m)^\s*D\s+dshow\s'){
-    throw 'Bundled FFmpeg is missing the required DirectShow (dshow) input device'
+$demuxers=& $ffmpeg -hide_banner -demuxers 2>&1
+if($LASTEXITCODE -ne 0 -or ($demuxers -join "`n") -notmatch '(?m)^\s*D\s+rawvideo\s'){
+    throw 'Bundled FFmpeg is missing the required shared-camera rawvideo input'
 }
 $decoders=& $ffmpeg -hide_banner -decoders 2>&1
 if($LASTEXITCODE -ne 0 -or ($decoders -join "`n") -notmatch '(?m)^\s*V\S{5}\s+mjpeg\s'){
@@ -49,6 +49,15 @@ if($LASTEXITCODE -ne 0 -or (Get-Item $pcm).Length -le 0){throw 'Bundled PCM anal
 & $ffmpeg -v error -i $sample -an -vf 'scale=32:18,signalstats,metadata=print:key=lavfi.signalstats.YAVG' -f null NUL
 if($LASTEXITCODE -ne 0){throw 'Bundled video analysis filters failed'}
 Remove-Item -LiteralPath $sample,$pcm
+
+# Exercise the same uncompressed camera input used by the shared frame reader.
+$raw=Join-Path $stage 'package-camera.bgra'
+[IO.File]::WriteAllBytes($raw,[byte[]]::new(64*64*4))
+& $ffmpeg -v error -nostdin -n -f rawvideo -pixel_format bgra -video_size 64x64 -framerate 30 -i $raw -frames:v 1 -c:v libx264 -pix_fmt yuv420p $sample
+if($LASTEXITCODE -ne 0){throw 'Bundled shared-camera BGRA encoding failed'}
+& $ffmpeg -v error -xerror -i $sample -f null NUL
+if($LASTEXITCODE -ne 0){throw 'Bundled shared-camera frame cannot decode'}
+Remove-Item -LiteralPath $raw,$sample
 
 $frameworks=(Get-Content (Join-Path $stage 'ZSirCapture.Windows.runtimeconfig.json') -Raw|ConvertFrom-Json).runtimeOptions.includedFrameworks
 foreach($framework in $frameworks){

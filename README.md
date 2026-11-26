@@ -3,7 +3,7 @@
   <h1>庄Sir采访录制助手</h1>
   <p><strong>把采访素材，高清留在嘉宾电脑里。</strong></p>
   <p>选择画面，点击录制。一个安静待在屏幕边缘的本地录制小工具。</p>
-  <p><a href="https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.5.2">下载 v0.5.2</a> · <a href="#三步开始录制">开始使用</a> · <a href="#能力与验证范围">支持范围</a> · <a href="docs/product.md">产品设计</a></p>
+  <p><a href="https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.6.0">下载 v0.6.0</a> · <a href="#三步开始录制">开始使用</a> · <a href="#能力与验证范围">支持范围</a> · <a href="docs/product.md">产品设计</a></p>
 </div>
 
 <p align="center">
@@ -19,29 +19,29 @@
 | 嘉宾机位 · macOS | 摄像头 + 话筒 | 人物采访、表情与回答 |
 | 桌面机位 · macOS / Windows | 显示器 + 系统播放声音 | 软件演示、课件、视频播放 |
 
-macOS 可选择只录摄像头、只录桌面或同时录两路；Windows 当前提供桌面机位。桌面声音包含会议、演示及通知等系统播放声音，不主动混入话筒。素材保存到本机，无需账号，无需中转服务器，也不会自动上传。
+macOS 和 Windows 均可选择只录摄像头、只录桌面或同时录两路。桌面声音包含会议、演示及通知等系统播放声音，不主动混入话筒。素材保存到本机，无需账号，无需中转服务器，也不会自动上传。
 
 ## 录得清楚，也看得放心
 
-- **实时确认画面**：小窗展示视频预览，可以折叠隐藏；macOS 支持摄像头、话筒和显示器选择，Windows 支持显示器和声音输出设备选择。
+- **实时确认画面**：小窗展示视频预览，可以折叠隐藏；macOS 支持摄像头、话筒和显示器选择，Windows 同样支持摄像头、话筒、显示器和声音输出设备选择。
 - **知道已经录了多久**：录制中显示时:分:秒，超过一小时继续累计。
 - **把屏幕留给采访**：15 秒不操作小窗后，自动收起为屏幕边缘的小红圈；点击展开，录制继续。主窗口和红圈会从本工具的桌面录制中排除。
-- **素材留在自己手里**：停止后在本地素材目录查看文件。遇到异常保留可用素材，macOS 可尝试生成恢复副本；恢复不保证找回尚未写入的数据。
+- **素材留在自己手里**：停止后在本地素材目录查看文件。遇到异常保留可用素材，macOS 和 Windows 可尝试生成恢复副本；恢复不保证找回尚未写入的数据。
 
 ## 下载
 
-v0.5.2 修复 Windows 高缩放下小窗跑到屏幕外、Windows 10 上默认无法开始录制的问题（0.5.1 将 Windows 界面改用 WPF 重新绘制）。六包同版本发布；[实测范围与已知限制](docs/releases/0.5.2.md)随版本保留。
+v0.6.0 降低 Mac 待录预览占用、修复原生5K编码失败，并改进 Windows 共享摄像头采集与异常素材恢复。Windows 新后端仍待物理机会议并发验收。六包同版本发布；[实测范围与已知限制](docs/releases/0.6.0.md)随版本保留。
 
 | 你的电脑 | 下载 | 要求与说明 |
 | --- | --- | --- |
-| Mac · M芯片 | [完整版 ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.5.2/ZSirCapture-0.5.2-macos-arm64.zip) | macOS13+ |
-| Mac · Intel | [完整版 Intel](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.5.2/ZSirCapture-0.5.2-macos-x86_64.zip) | macOS13+ |
-| 旧版Mac · M芯片 | [macOS12兼容版 ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.5.2/ZSirCapture-0.5.2-macos12-arm64.zip) | macOS12.3+；桌面不含系统声音 |
-| 旧版Mac · Intel | [macOS12兼容版 Intel](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.5.2/ZSirCapture-0.5.2-macos12-x86_64.zip) | macOS12.3+；桌面不含系统声音 |
-| Windows · Intel / AMD | [Windows x64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.5.2/ZSirCapture-0.5.2-windows-x64.zip) | Windows10 2004+；解压即用 |
-| Windows · ARM | [Windows ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.5.2/ZSirCapture-0.5.2-windows-arm64.zip) | Windows11 ARM；编码工具使用x64仿真 |
+| Mac · M芯片 | [完整版 ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.6.0/ZSirCapture-0.6.0-macos-arm64.zip) | macOS13+ |
+| Mac · Intel | [完整版 Intel](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.6.0/ZSirCapture-0.6.0-macos-x86_64.zip) | macOS13+ |
+| 旧版Mac · M芯片 | [macOS12兼容版 ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.6.0/ZSirCapture-0.6.0-macos12-arm64.zip) | macOS12.3+；桌面不含系统声音 |
+| 旧版Mac · Intel | [macOS12兼容版 Intel](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.6.0/ZSirCapture-0.6.0-macos12-x86_64.zip) | macOS12.3+；桌面不含系统声音 |
+| Windows · Intel / AMD | [Windows x64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.6.0/ZSirCapture-0.6.0-windows-x64.zip) | Windows10 2004+；解压即用 |
+| Windows · ARM | [Windows ARM64](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.6.0/ZSirCapture-0.6.0-windows-arm64.zip) | Windows11 ARM；编码工具使用x64仿真 |
 
-[发布说明](https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.5.2) · [SHA256校验](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.5.2/SHA256SUMS.txt) · [编码工具完整源码](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.5.2/recording-tools-source.tar.gz)
+[发布说明](https://github.com/billzhuang6569/zsir-interview-assistant/releases/tag/v0.6.0) · [SHA256校验](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.6.0/SHA256SUMS.txt) · [编码工具完整源码](https://github.com/billzhuang6569/zsir-interview-assistant/releases/download/v0.6.0/recording-tools-source.tar.gz)
 
 Mac完整版在高级设置中提供自动/手动检查和自定义HTTPS清单来源；录制期间不打扰，仅提示下载，不自动安装。macOS12兼容版与Windows本轮不提供版本检测。v0.2.0用户需手动升级一次。
 

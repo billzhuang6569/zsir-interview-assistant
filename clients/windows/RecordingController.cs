@@ -177,9 +177,9 @@ internal sealed class RecordingController : IDisposable
     async Task StopIdlePreviewCoreAsync()
     {
         var camera = idleCamera; var current = idlePreview;
-        idleCamera = null; idlePreview = null; ClearPreview(camera: true); ClearPreview(camera: false);
-        try { await Task.WhenAll(camera?.StopAsync() ?? Task.CompletedTask, current?.StopAsync() ?? Task.CompletedTask); }
-        finally { camera?.Dispose(); current?.Dispose(); }
+        ClearPreview(camera: true); ClearPreview(camera: false);
+        await Task.WhenAll(camera?.StopAsync() ?? Task.CompletedTask, current?.StopAsync() ?? Task.CompletedTask);
+        idleCamera = null; idlePreview = null; camera?.Dispose(); current?.Dispose();
     }
     async Task UpdateIdlePreviewAsync()
     {
@@ -190,8 +190,9 @@ internal sealed class RecordingController : IDisposable
             bool cameraWanted = PreviewWanted && !IsBusy && !settingsOpen && recorder?.CleanupPending != true && options.IncludesCamera;
             if (idleCamera != null && (!cameraWanted || idleCameraId != options.CameraId || idleCamera.HasExited))
             {
-                var old = idleCamera; idleCamera = null; ClearPreview(camera: true);
-                try { await old.StopAsync(); } finally { old.Dispose(); }
+                var old = idleCamera; ClearPreview(camera: true);
+                await old.StopAsync(); idleCamera = null; old.Dispose();
+                if (old.Failure != null) CameraPreviewFailed(old.Failure);
             }
             bool wanted = PreviewWanted && options.IncludesDesktop && !settingsOpen && !IsBusy && recorder?.CleanupPending != true && screen != null;
             if (idlePreview != null && (!wanted || idleDesktopId != options.ScreenId || idlePreview.Bounds != screen!.Bounds || idlePreview.HasExited)) await StopIdlePreviewCoreAsync();
