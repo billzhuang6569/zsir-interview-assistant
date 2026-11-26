@@ -22,3 +22,8 @@ recovery/
 clients/windows/bin/
 clients/windows/obj/
 *.f32
+
+# Per-host recording/profiling evidence remains local; release notes summarize results.
+docs/testing/mac-dev-2026-11-27/
+docs/testing/mac-preview-optimization-2026-11-27/
+docs/testing/stability-2026-11-20/

@@ -4,19 +4,23 @@ using System.Text;
 
 namespace ZSirCapture;
 
-// Owns the desktop source only while the recorder is idle. StopAsync completes
-// before recording starts, so preview never creates a second recording source.
+// Owns one idle source. StopAsync completes before recording starts, including
+// late native initialization, so preview cannot reopen the camera afterward.
 internal sealed class IdlePreview : IDisposable
 {
     readonly Process process;
+    readonly SharedCameraInput? cameraInput;
+    Task? stopTask;
     readonly Task frames;
     readonly Task errors;
     public Rectangle Bounds { get; }
-    public bool HasExited => process.HasExited;
+    public Exception? Failure => cameraInput?.Failure;
+    public bool HasExited => process.HasExited || cameraInput?.Failure != null;
 
     public IdlePreview(string tools, Rectangle bounds, Action<byte[]> frame, CameraDevice? camera = null, CameraFormat? format = null)
     {
         Bounds = bounds;
+        if (camera != null && !CameraDevices.Fake) cameraInput = new SharedCameraInput(camera, format!);
         var info = new ProcessStartInfo(Path.Combine(tools, "ffmpeg.exe")) {
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
             RedirectStandardOutput = true, RedirectStandardError = true,
@@ -26,14 +30,16 @@ internal sealed class IdlePreview : IDisposable
             "-offset_x", bounds.X.ToString(CultureInfo.InvariantCulture), "-offset_y", bounds.Y.ToString(CultureInfo.InvariantCulture),
             "-video_size", $"{bounds.Width}x{bounds.Height}", "-i", "desktop", "-an", "-vf", "scale=320:-2",
             "-c:v", "mjpeg", "-threads", "1", "-q:v", "5", "-f", "image2pipe", "pipe:1"];
-        if (camera != null) args = ["-hide_banner", "-loglevel", "error", ..CameraDevices.Input(camera, format!),
+        if (camera != null) args = ["-hide_banner", "-loglevel", "error", ..CameraDevices.Input(camera, format!, cameraInput?.PipePath),
             "-an", "-vf", "fps=10,scale=320:-2", "-c:v", "mjpeg", "-threads", "1", "-q:v", "5", "-f", "image2pipe", "pipe:1"];
         foreach (string argument in args) info.ArgumentList.Add(argument);
         process = new Process { StartInfo = info };
         try { process.Start(); }
-        catch { process.Dispose(); throw; }
+        catch { process.Dispose(); _ = cameraInput?.StopAsync(); throw; }
         frames = ReadFramesAsync(process.StandardOutput.BaseStream, frame);
         errors = DrainAsync(process.StandardError.BaseStream);
+        if (cameraInput != null)
+            _ = cameraInput.StartAsync().ContinueWith(faulted => { _ = faulted.Exception; }, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     static async Task DrainAsync(Stream stream)
@@ -67,18 +73,18 @@ internal sealed class IdlePreview : IDisposable
         catch (ObjectDisposedException) { }
     }
 
-    public async Task StopAsync()
+    public Task StopAsync() => (stopTask ??= StopCoreAsync()).WaitAsync(TimeSpan.FromSeconds(8));
+
+    async Task StopCoreAsync()
     {
+        var cameraStop = cameraInput?.StopAsync() ?? Task.CompletedTask;
         if (!process.HasExited) process.Kill(entireProcessTree: true);
-        // Never hand the source to Recorder until the old process has exited.
-        await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
-        await Task.WhenAll(frames, errors).WaitAsync(TimeSpan.FromSeconds(3));
+        await Task.WhenAll(process.WaitForExitAsync(), frames, errors, cameraStop);
     }
 
     public void Dispose()
     {
-        try { if (!process.HasExited) { process.Kill(entireProcessTree: true); process.WaitForExit(2000); } }
-        catch (InvalidOperationException) { }
-        finally { process.Dispose(); }
+        // Retain native ownership after a public timeout until late initialization/stop really settles.
+        _ = (stopTask ??= StopCoreAsync()).ContinueWith(done => { _ = done.Exception; process.Dispose(); });
     }
 }

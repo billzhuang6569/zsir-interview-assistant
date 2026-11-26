@@ -25,6 +25,7 @@ public final class RecordingTrack: @unchecked Sendable {
         public var audioSamples = 0
         public var droppedVideo = 0
         public var droppedAudio = 0
+        public var videoCodec = ""
         public var width: Int32 = 0
         public var height: Int32 = 0
         public var firstVideoSeconds: Double?
@@ -181,8 +182,7 @@ public final class RecordingTrack: @unchecked Sendable {
     private func perform(_ operation: () throws -> Void) {
         do { try operation(); try writer.checkHealth() }
         catch {
-            let native = error as NSError
-            lock.lock(); state.error = state.error ?? "\(error.localizedDescription) (\(native.domain):\(native.code))"; lock.unlock()
+            lock.lock(); state.error = state.error ?? RecordingError.describe(error); lock.unlock()
         }
         publish()
     }
@@ -191,6 +191,7 @@ public final class RecordingTrack: @unchecked Sendable {
         lock.lock()
         state.videoSamples = writer.videoSamples; state.audioSamples = writer.audioSamples
         state.droppedVideo = writer.droppedVideo; state.droppedAudio = writer.droppedAudio
+        state.videoCodec = writer.videoCodec.rawValue
         state.width = writer.width; state.height = writer.height
         state.firstVideoSeconds = writer.firstVideoSeconds
         state.lastVideoSeconds = writer.lastVideoSeconds; state.lastAudioSeconds = writer.lastAudioSeconds

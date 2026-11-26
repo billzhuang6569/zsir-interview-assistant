@@ -51,7 +51,10 @@ internal static class DeviceCheck
                 CapturePrivacy.Check("webcam");
                 var format = CameraDevices.ChooseFormat(available);
                 string partial = Path.Combine(directory, "camera-check-partial.mp4");
-                var result = await runner.RunAsync("ffmpeg.exe", ["-hide_banner", "-nostdin", "-n", ..CameraDevices.Input(cameras[0], format),
+                var input = new SharedCameraInput(cameras[0], format);
+                try {
+                await input.StartAsync().WaitAsync(TimeSpan.FromSeconds(10));
+                var result = await runner.RunAsync("ffmpeg.exe", ["-hide_banner", "-nostdin", "-n", ..CameraDevices.Input(cameras[0], format, input.PipePath),
                     "-t", "3", "-an", "-c:v", "libx264", "-preset", "veryfast", "-threads", "2", "-b:v", "8000000",
                     "-vf", $"scale={format.Width / 2 * 2}:{format.Height / 2 * 2}", "-r", "30", "-fps_mode", "cfr", "-pix_fmt", "yuv420p",
                     "-movflags", "+frag_keyframe+empty_moov+default_base_moof", partial], TimeSpan.FromSeconds(20));
@@ -61,6 +64,7 @@ internal static class DeviceCheck
                 double duration = double.Parse(media.GetProperty("format").GetProperty("duration").GetString()!, CultureInfo.InvariantCulture);
                 if (Math.Abs(duration - 3) > 1) throw new IOException("摄像头检查时长异常");
                 File.Move(partial, Path.Combine(directory, "camera-check.mp4")); report["cameraCheck"] = media;
+                } finally { await input.StopAsync().WaitAsync(TimeSpan.FromSeconds(8)); }
             }
             catch (Exception ex) { errors.Add("摄像头采集：" + ex.Message); }
         }

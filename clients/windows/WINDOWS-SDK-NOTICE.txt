@@ -1,0 +1,5 @@
+The shared camera backend uses Microsoft's Windows SDK for .NET targeting pack
+(Microsoft.Windows.SDK.NET.Ref), including Microsoft.Windows.SDK.NET.dll and
+WinRT.Runtime.dll. Copyright Microsoft Corporation. All rights reserved.
+Windows SDK license: https://aka.ms/WinSDKLicenseURL
+Project: https://aka.ms/WinSDKProjectURL

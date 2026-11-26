@@ -169,6 +169,10 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y ffmpeg
+      - name: Check shared camera transport and recovery sound isolation
+        run: |
+          set -euo pipefail
+          dotnet run --project script/tests/WindowsCaptureChecks/WindowsCaptureChecks.csproj 2>&1 | tee validation-logs/windows-capture-checks.log
       - name: Validate encoded positive and negative fixtures
         run: |
           set -euo pipefail

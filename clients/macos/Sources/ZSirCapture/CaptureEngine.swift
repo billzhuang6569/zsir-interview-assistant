@@ -76,7 +76,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                     startup = nil
                     firstFrames.complete(.failure(error))
                 }
-                fail(error.localizedDescription)
+                fail(RecordingError.describe(error))
             }
         }
         if overflow { fail("采集队列超过容量，已停止并保留素材") }
@@ -287,7 +287,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             }
             if let stream { try? await stream.stopCapture() }
             if mode.includesCamera { try? await sessionWork { [self] in session.stopRunning() } }
-            try? TakeFiles.writeReport(["state": "start_failed", "mode": mode.rawValue, "stealthInCapture": stealthInCapture, "error": error.localizedDescription], in: take)
+            try? TakeFiles.writeReport(["state": "start_failed", "mode": mode.rawValue, "stealthInCapture": stealthInCapture, "error": RecordingError.describe(error)], in: take)
             stream = nil
             releaseResources()
             throw error
@@ -316,7 +316,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             group.enter()
             writer.prepareVideo(sample) { [self] result in
                 mediaQueue.async {
-                    if case .failure(let error) = result { self.fail(error.localizedDescription) }
+                    if case .failure(let error) = result { self.fail(RecordingError.describe(error)) }
                     group.leave()
                 }
             }
@@ -356,7 +356,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 let boundary = self.requestedEnd
                 self.admissionLock.unlock()
                 for (_, writer) in self.activeWriters { try writer.advance(to: boundary ?? now, exclusive: boundary != nil) }
-            } catch { self.fail(error.localizedDescription) }
+            } catch { self.fail(RecordingError.describe(error)) }
             let now = ProcessInfo.processInfo.systemUptime
             self.admissionLock.lock()
             self.heartbeat = now
@@ -389,14 +389,16 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 defer { session.commitConfiguration() }
                 for input in session.inputs { session.removeInput(input) }
                 for output in session.outputs { session.removeOutput(output) }
-                if session.canSetSessionPreset(.hd1920x1080) { session.sessionPreset = .hd1920x1080 }
-                else { session.sessionPreset = .high }
+                if !previewOnly {
+                    if session.canSetSessionPreset(.hd1920x1080) { session.sessionPreset = .hd1920x1080 }
+                    else { session.sessionPreset = .high }
+                }
                 for device in (previewOnly ? [videoDevice] : [videoDevice] + [audioDevice].compactMap { $0 }) {
                     let input = try AVCaptureDeviceInput(device: device)
                     guard session.canAddInput(input) else { throw RecordingError("设备不可用：\(device.localizedName)") }
                     session.addInput(input)
                 }
-                if videoDevice.activeFormat.videoSupportedFrameRateRanges.contains(where: { $0.minFrameRate <= 30 && $0.maxFrameRate >= 30 }) {
+                if !previewOnly, videoDevice.activeFormat.videoSupportedFrameRateRanges.contains(where: { $0.minFrameRate <= 30 && $0.maxFrameRate >= 30 }) {
                     try videoDevice.lockForConfiguration()
                     videoDevice.activeVideoMinFrameDuration = CMTime(value: 1, timescale: 30)
                     videoDevice.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: 30)
@@ -418,6 +420,36 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 session.addOutput(video)
                 if !previewOnly { session.addOutput(audio) }
         }
+        if previewOnly {
+            try await sessionWork { [self] in
+                guard let video = session.outputs.compactMap({ $0 as? AVCaptureVideoDataOutput }).first else { return }
+                let source = CMVideoFormatDescriptionGetDimensions(videoDevice.activeFormat.formatDescription)
+                let size = try Self.idlePreviewDimensions(width: Int(source.width), height: Int(source.height))
+                video.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                    kCVPixelBufferWidthKey as String: size.width, kCVPixelBufferHeightKey as String: size.height]
+                // Limit this output connection, not the camera shared with a meeting app.
+                if let connection = video.connection(with: .video), connection.isVideoMinFrameDurationSupported {
+                    connection.videoMinFrameDuration = CMTime(value: 1, timescale: 10)
+                }
+            }
+        }
+    }
+
+    private static func idlePreviewDimensions(width: Int, height: Int) throws -> (width: Int, height: Int) {
+        let bounded = try RecordingProfile.balanced.dimensions(width: width, height: height)
+        let scale = min(1, 640 / Double(max(bounded.width, bounded.height)))
+        return (max(2, Int(Double(bounded.width) * scale) / 2 * 2), max(2, Int(Double(bounded.height) * scale) / 2 * 2))
+    }
+
+    static func checkIdlePreviewDimensions() throws {
+        for (width, height) in [(5120, 2880), (2880, 5120), (320, 240), (2, 2), (3456, 2234)] {
+            let size = try idlePreviewDimensions(width: width, height: height)
+            precondition(max(size.width, size.height) <= 640 && size.width <= width && size.height <= height)
+            precondition(size.width % 2 == 0 && size.height % 2 == 0)
+        }
+        let size = try idlePreviewDimensions(width: 1920, height: 1080)
+        precondition(size.width == 640 && size.height == 360)
+        print("PASS: idle preview <=640 pixels, even dimensions, landscape/portrait/tiny sources never enlarged")
     }
 
     private func prepareDesktop() async throws -> Int {
@@ -431,7 +463,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         let filter = SCContentFilter(display: display, excludingApplications: ownApps, exceptingWindows: [])
         let configuration = SCStreamConfiguration()
         let size = try DisplayCaptureCompatibility.pixelSize(display: display, filter: filter)
-        let dimensions = try profile.dimensions(width: Int(size.width), height: Int(size.height))
+        let dimensions = previewOnly ? try Self.idlePreviewDimensions(width: Int(size.width), height: Int(size.height)) : try profile.dimensions(width: Int(size.width), height: Int(size.height))
         configuration.width = dimensions.width
         configuration.height = dimensions.height
         let desktopBitRate = try quality.desktopBitRate(width: configuration.width, height: configuration.height)
@@ -481,7 +513,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         do {
             for (_, writer) in writers { try writer.checkHealth() }
 
-        } catch { fail(error.localizedDescription); return }
+        } catch { fail(RecordingError.describe(error)); return }
         let seconds = ProcessInfo.processInfo.systemUptime - startedUptime
         let ready = !writers.isEmpty && writers.allSatisfy { $0.1.videoSamples > 0 && (!$0.1.includesAudio || $0.1.audioSamples > 0) }
         let status = "正在写入本机 · 丢帧 \(writers.reduce(0) { $0 + $1.1.droppedVideo })"
@@ -504,7 +536,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             }
             if free < 2_000_000_000 { fail("剩余空间不足 2 GB，已停止录制并保留素材") }
         } catch {
-            fail("无法检查输出磁盘：\(error.localizedDescription)")
+            fail("无法检查输出磁盘：\(RecordingError.describe(error))")
         }
     }
 
@@ -526,7 +558,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 preview(sample, name: writer === camera ? "camera" : "desktop")
             }
         }
-        catch { fail(error.localizedDescription) }
+        catch { fail(RecordingError.describe(error)) }
     }
 
     private func preview(_ sample: CMSampleBuffer, name: String) {
@@ -569,7 +601,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     }
 
     func stream(_ stream: SCStream, didStopWithError error: Error) {
-        mediaQueue.async { [weak self] in self?.fail("屏幕采集停止：\(error.localizedDescription)") }
+        mediaQueue.async { [weak self] in self?.fail("屏幕采集停止：\(RecordingError.describe(error))") }
     }
 
     private func markPreviewStartup() {
@@ -653,7 +685,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                 let error = RecordingError("停止超过 15 秒，素材需要检查；后台仍在清理设备，请勿开始新录制，必要时退出后恢复副本")
                 if stopGate.complete(.failure(error)), let take {
                     // A separate atomic marker cannot overwrite the eventual detailed report.
-                    let marker: [String: Any] = ["state": "needs_review", "error": error.localizedDescription,
+                    let marker: [String: Any] = ["state": "needs_review", "error": RecordingError.describe(error),
                         "recovery": "Wait for device cleanup or quit the app before recovering a copy."]
                     if let data = try? JSONSerialization.data(withJSONObject: marker, options: [.sortedKeys]) {
                         try? data.write(to: take.appendingPathComponent("stop-timeout.json"), options: .atomic)
@@ -694,11 +726,11 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             var issue: String?
             if let stream {
                 do { try await stream.stopCapture() }
-                catch { issue = error.localizedDescription }
+                catch { issue = RecordingError.describe(error) }
             }
             if mode.includesCamera {
                 do { try await sessionWork { [self] in session.stopRunning() } }
-                catch { issue = issue ?? error.localizedDescription }
+                catch { issue = issue ?? RecordingError.describe(error) }
             }
             return issue
         }
@@ -737,7 +769,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                                 if writer.videoSamples == 0 || (writer.includesAudio && writer.audioSamples == 0) {
                                     issues.append("\(name) 未收到完整音视频")
                                 }
-                                if case .failure(let error) = result { issues.append("\(name)：\(error.localizedDescription)") }
+                                if case .failure(let error) = result { issues.append("\(name)：\(RecordingError.describe(error))") }
                                 group.leave()
                             }
                         }
@@ -747,14 +779,15 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
                     if let timeout = stopGate.failureDescription { issues.append(timeout) }
                     let report: [String: Any] = [
                         "state": issues.values.isEmpty ? "finalized_unverified" : "needs_review",
-                        "devices": devices, "mode": mode.rawValue, "stealthInCapture": stealthInCapture, "errors": issues.values, "startup": startupDiagnostics,
+                        "devices": devices, "mode": mode.rawValue, "stealthInCapture": stealthInCapture, "errors": issues.values,
+                        "audioSources": Dictionary(uniqueKeysWithValues: writers.map { ($0.0, $0.1.includesAudio ? ($0.0 == "camera" ? "microphone" : "system") : "none") }), "startup": startupDiagnostics,
                         "profile": profile.rawValue, "quality": quality.rawValue, "qualityVersion": 1, "systemAudio": systemAudio,
                         "durationSeconds": Date().timeIntervalSince(startedAt),
                         "tracks": Dictionary(uniqueKeysWithValues: writers.map { ($0.0, self.metrics($0.1)) }),
                         "note": "封装完成不代表实机验收通过；需听检、检查首尾、Final Cut Pro 导入和长时同步。"
                     ]
                     do { try TakeFiles.writeReport(report, in: folder) }
-                    catch { issues.append("检查报告保存失败：\(error.localizedDescription)") }
+                    catch { issues.append("检查报告保存失败：\(RecordingError.describe(error))") }
                     self.camera = nil
                     self.desktop = nil
                     if issues.values.isEmpty { continuation.resume() }
@@ -909,7 +942,7 @@ final class CaptureEngine: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
          "encoderPreparationSeconds": writer.snapshot.encoderPreparationSeconds,
          "firstVideoAppendSeconds": writer.snapshot.firstVideoAppendSeconds,
          "firstAudioAppendSeconds": writer.snapshot.firstAudioAppendSeconds,
-         "encoderPolicy": writer.encoderPolicy, "includesAudio": writer.includesAudio, "width": writer.width, "height": writer.height, "targetVideoBitRate": writer.videoBitRate,
+         "videoCodec": writer.snapshot.videoCodec, "encoderPolicy": writer.encoderPolicy, "includesAudio": writer.includesAudio, "width": writer.width, "height": writer.height, "targetVideoBitRate": writer.videoBitRate,
          "firstVideoSeconds": writer.firstVideoSeconds ?? -1, "lastVideoSeconds": writer.lastVideoSeconds,
          "lastAudioSeconds": writer.lastAudioSeconds]
     }

@@ -305,7 +305,7 @@ final class CaptureModel: ObservableObject {
             preview.onPreview = { [weak self, weak preview] name, sample, capturedAt in
                 guard let self, let preview, self.idleEngine === preview,
                       token == self.previewGeneration, self.previewVisible, !self.busy else { return }
-                self.idlePreviewLive = true
+                if !self.idlePreviewLive { self.idlePreviewLive = true }
                 self.recoverIdlePreview(token: token)
                 let feed = name == "camera" ? self.cameraPreview : self.desktopPreview
                 feed.frame = (sample, capturedAt)
@@ -371,6 +371,21 @@ final class CaptureModel: ObservableObject {
         model.selection.displayID = 42
         await model.updateIdlePreview(enabled: true).value
         precondition(starts == 2 && model.idlePreviewError == nil && model.phase == "准备就绪" && model.detail.isEmpty)
+        // Every video frame reaches its feed; only the first one invalidates the root model.
+        var pixel: CVPixelBuffer?
+        precondition(CVPixelBufferCreate(kCFAllocatorDefault, 2, 2, kCVPixelFormatType_32BGRA, nil, &pixel) == noErr)
+        var format: CMVideoFormatDescription?
+        precondition(CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixel!, formatDescriptionOut: &format) == noErr)
+        var timing = CMSampleTimingInfo(duration: CMTime(value: 1, timescale: 30), presentationTimeStamp: .zero, decodeTimeStamp: .invalid)
+        var frame: CMSampleBuffer?
+        precondition(CMSampleBufferCreateReadyWithImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: pixel!, formatDescription: format!, sampleTiming: &timing, sampleBufferOut: &frame) == noErr)
+        var rootUpdates = 0, feedUpdates = 0
+        let rootObservation = model.objectWillChange.sink { rootUpdates += 1 }
+        let feedObservation = model.desktopPreview.$frame.dropFirst().sink { _ in feedUpdates += 1 }
+        for _ in 0..<30 { model.idleEngine!.onPreview?("desktop", frame!, Date()) }
+        precondition(rootUpdates == 1 && feedUpdates == 30)
+        rootObservation.cancel(); feedObservation.cancel()
+        print("PASS: 30 preview frames update the feed 30 times and the root model only once")
         await model.updateIdlePreview(enabled: false).value
         // A failed old startup, released after a new request/recording state,
         // must finish its cleanup without resetting the new busy/phase values.
@@ -752,7 +767,7 @@ enum CaptureApp {
     @MainActor static func main() {
         let app = NSApplication.shared
         if CommandLine.arguments.contains("--check-preview-recovery") {
-            Task { do { try await CaptureModel.checkIdlePreviewFailureRecovery(); exit(0) } catch { print("FAIL preview recovery: \(error)"); exit(1) } }
+            Task { do { try CaptureEngine.checkIdlePreviewDimensions(); try await CaptureModel.checkIdlePreviewFailureRecovery(); exit(0) } catch { print("FAIL preview recovery: \(error)"); exit(1) } }
             app.run(); return
         }
         if CommandLine.arguments.contains("--check-lifecycle") {

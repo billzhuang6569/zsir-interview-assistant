@@ -482,6 +482,50 @@ final class RecordingCoreChecks {
         expectGreater(audioFrames, 500_000)
     }
 
+    func testErrorDescriptions() {
+        var error = NSError(domain: "NSOSStatusErrorDomain", code: -12903)
+        error = NSError(domain: "AVFoundationErrorDomain", code: -11800, userInfo: [NSUnderlyingErrorKey: error])
+        expect(RecordingError.describe(error).contains("NSOSStatusErrorDomain: -12903"))
+        expectEqual(RecordingError.describe(RecordingError("已保留素材")), "已保留素材")
+        for _ in 0..<12 { error = NSError(domain: "wrapper", code: 1, userInfo: [NSUnderlyingErrorKey: error]) }
+        expectEqual(RecordingError.describe(error).components(separatedBy: " → ").count, 8)
+    }
+
+    func testDesktop5KPreservesPixels() async throws {
+        let root = try temporaryFolder()
+        let url = root.appendingPathComponent("desktop-5k.mp4")
+        let writer = MovieWriter(url: url, epoch: .zero, videoBitRate: 42_666_666)
+        for frame in 0..<30 {
+            let time = CMTime(value: Int64(frame), timescale: 30)
+            try writer.append(videoSample(at: time, width: 5120, height: 2880,
+                pixelFormat: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange), isVideo: true)
+            try writer.advance(to: time)
+            try writer.append(audioSample(at: time), isVideo: false)
+            try await Task.sleep(nanoseconds: 33_333_333)
+        }
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            writer.finish(at: CMTime(value: 30, timescale: 30)) { continuation.resume(with: $0) }
+        }
+        let asset = AVURLAsset(url: url)
+        let track = try unwrap(try await asset.loadTracks(withMediaType: .video).first)
+        expectEqual(try await track.load(.naturalSize), CGSize(width: 5120, height: 2880))
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: track, outputSettings: [kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange])
+        reader.add(output)
+        expect(reader.startReading())
+        var frames = 0
+        while let sample = output.copyNextSampleBuffer() {
+            expectEqual(CMSampleBufferGetPresentationTimeStamp(sample), CMTime(value: Int64(frames), timescale: 30))
+            frames += 1
+        }
+        expectEqual(reader.status, .completed)
+        expectEqual(frames, 30)
+        expectEqual(writer.videoCodec, .hevc)
+        expectGreater(writer.audioSamples, 0)
+        expectEqual(try await asset.loadTracks(withMediaType: .audio).count, 1)
+        print("PASS native 5120x2880: 30 CFR frames with an AAC track encoded and decoded without resizing")
+    }
+
     func testDesktop4KPreservesPixels() async throws {
         let root = try temporaryFolder()
         let url = root.appendingPathComponent("desktop-4k.mp4")
@@ -743,11 +787,16 @@ func unwrap<T>(_ value: T?) throws -> T {
         setbuf(stdout, nil)
         if CommandLine.arguments.contains("--hardware-preflight") { exit(hardwareEncoderPreflight()) }
         let checks = RecordingCoreChecks()
+        checks.testErrorDescriptions()
         if CommandLine.arguments.count == 3 && CommandLine.arguments[1] == "--crash-fixture" {
             try await checks.crashFixture(folder: URL(fileURLWithPath: CommandLine.arguments[2]))
             return
         }
         defer { for folder in checks.folders { try? FileManager.default.removeItem(at: folder) } }
+        if CommandLine.arguments.contains("--5k-only") {
+            try await checks.testDesktop5KPreservesPixels()
+            return
+        }
         if CommandLine.arguments.contains("--prepared-start-only") {
             try await checks.testEncoderPreparationBeforeEpoch()
             return
@@ -774,6 +823,7 @@ func unwrap<T>(_ value: T?) throws -> T {
             try await checks.testSyntheticVideoAndAudioProduceReadableMP4()
             return
         }
+        try await checks.testDesktop5KPreservesPixels()
         try await checks.testEncoderPreparationBeforeEpoch()
         try await checks.testNonGridStopKeepsFinalFrame()
         try await checks.testFinishDeadlinePreservesOpenOriginal()
