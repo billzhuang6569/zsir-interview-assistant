@@ -38,6 +38,12 @@ jobs:
         shell: pwsh
         run: |
           ./script/package-windows.ps1 -Architecture '${{ matrix.architecture }}' -ToolsArchive "$env:RUNNER_TEMP/recording-tools-win-x64.zip"
+      - name: Check native Windows camera pipe and cancellation
+        if: matrix.architecture == 'x64'
+        shell: pwsh
+        run: |
+          dotnet run --project script/tests/WindowsCaptureChecks/WindowsCaptureChecks.csproj -- --pipe-only
+          if ($LASTEXITCODE -ne 0) { throw 'Native camera pipe checks failed' }
       - name: Run x64 application checks
         if: matrix.architecture == 'x64'
         shell: pwsh

@@ -41,6 +41,7 @@ using (var client = new NamedPipeClientStream(".", blocked.Path[(blocked.Path.La
     await blocked.Completion.WaitAsync(TimeSpan.FromSeconds(2));
 }
 Console.WriteLine("PASS shared-camera pipe: bounded latest frame, complete BGRA bytes, EOF, stop before connection, late callback");
+if (args.Contains("--pipe-only")) return;
 
 string root = Path.Combine(Path.GetTempPath(), "zsir-recovery-check-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
